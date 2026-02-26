@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Card, PatternResult, PlayerPosition, PlayTypeName } from '@/types/guandan';
+import { Card, PatternResult, PlayAction, PlayerPosition, PlayTypeName } from '@/types/guandan';
 import { useGuandanStore } from '@/store/useGuandanStore';
 import { canBeat, identifyPattern } from '@/utils/guandanRules';
 import { WildcardSuggestion } from '@/utils/guandanRules';
 import HandArea from './HandArea';
+import PlayedCardZone from './PlayedCardZone';
 import WildcardPopover from './WildcardPopover';
 import CardTile from './CardTile';
 import { SUIT_SYMBOL } from './CardTile';
@@ -182,8 +183,12 @@ export default function MainTable() {
     setTimeout(() => setErrorMsg(null), 3000);
   }
 
-  // ── 中央出牌记录（最近 6 条） ────────────────────────────
-  const CENTER_HISTORY = table.actionHistory.slice(-6);
+  // ── 本轮各家出牌（南→东→北→西 各出一张为一轮） ─────────────
+  const lastRound = table.actionHistory.slice(-4);
+  const lastPlayByPlayer: Partial<Record<PlayerPosition, PlayAction>> = {};
+  for (const a of lastRound) {
+    lastPlayByPlayer[a.playerId] = a;
+  }
 
   // ── 已选牌实时牌型识别 ────────────────────────────────────
   const selectedCards = currentCards.filter((c) => selectedIds.has(c.id));
@@ -193,7 +198,7 @@ export default function MainTable() {
       : null;
 
   return (
-    <div className="relative w-full min-h-screen bg-[#0D5B46] flex flex-col select-none overflow-y-auto pb-32">
+    <div className="relative w-full min-h-screen bg-[#0D5B46] flex flex-col select-none overflow-y-auto overflow-x-hidden pb-32">
       {/* 桌面光晕 */}
       <div
         className="absolute inset-0 opacity-10 pointer-events-none"
@@ -203,42 +208,28 @@ export default function MainTable() {
         }}
       />
 
-      {/* ── 北家 ──────────────────────────────────────────── */}
-      <div className="flex justify-center pt-3 pb-1 z-10">
-        <HandArea
-          position="NORTH"
-          cards={players.NORTH.handCards}
-          isRevealed={players.NORTH.isRevealed}
-          levelRank={levelRank}
-          isCurrent={currentPos === 'NORTH'}
-          selectedCardIds={selectedIds}
-          onToggleCard={handleToggleCard}
-          onToggleReveal={() => toggleReveal('NORTH')}
-          onSetAsCurrent={() => handleSetCurrentPlayer('NORTH')}
-          violatingCardIds={violationIds}
-        />
-      </div>
-
-      {/* ── 中间行：东 / 西（左右分布）────────────────────── */}
-      <div className="flex flex-1 items-stretch justify-between gap-2 px-2 z-10">
-        {/* 东家 */}
-        <div className="flex items-center">
+      {/* ── 口字形布局：上北下南左西右东，牌竖着展示，上下滚动 ───── */}
+      <div className="grid grid-cols-[minmax(90px,1fr)_minmax(0,1fr)_minmax(90px,1fr)] grid-rows-[auto_1fr_auto] gap-2 px-2 flex-1 z-10 min-h-0 w-full max-w-full">
+        {/* 北家（顶部中央，同数字一列，列从右向左从小到大） */}
+        <div className="col-start-2 row-start-1 flex flex-col items-center justify-center pt-3 pb-1 min-w-0 gap-1">
           <HandArea
-            position="EAST"
-            cards={players.EAST.handCards}
-            isRevealed={players.EAST.isRevealed}
+            position="NORTH"
+            cards={players.NORTH.handCards}
+            isRevealed={players.NORTH.isRevealed}
             levelRank={levelRank}
-            isCurrent={currentPos === 'EAST'}
+            isCurrent={currentPos === 'NORTH'}
             selectedCardIds={selectedIds}
             onToggleCard={handleToggleCard}
-            onToggleReveal={() => toggleReveal('EAST')}
-            onSetAsCurrent={() => handleSetCurrentPlayer('EAST')}
+            onToggleReveal={() => toggleReveal('NORTH')}
+            onSetAsCurrent={() => handleSetCurrentPlayer('NORTH')}
             violatingCardIds={violationIds}
+            layoutMode="ns-column"
           />
+          <PlayedCardZone action={lastPlayByPlayer.NORTH} levelRank={levelRank} />
         </div>
 
-        {/* 西家 */}
-        <div className="flex items-center">
+        {/* 西家（左侧中央，同数字一行，行从下到上从小到大） */}
+        <div className="col-start-1 row-start-1 row-span-3 flex flex-row items-center justify-center min-w-0 overflow-visible gap-2">
           <HandArea
             position="WEST"
             cards={players.WEST.handCards}
@@ -250,67 +241,43 @@ export default function MainTable() {
             onToggleReveal={() => toggleReveal('WEST')}
             onSetAsCurrent={() => handleSetCurrentPlayer('WEST')}
             violatingCardIds={violationIds}
+            layoutMode="we-row"
+          />
+          <PlayedCardZone action={lastPlayByPlayer.WEST} levelRank={levelRank} />
+        </div>
+
+        {/* 东家（右侧中央，同数字一行，行从下到上从小到大） */}
+        <div className="col-start-3 row-start-1 row-span-3 flex flex-row items-center justify-center min-w-0 overflow-visible gap-2">
+          <PlayedCardZone action={lastPlayByPlayer.EAST} levelRank={levelRank} />
+          <HandArea
+            position="EAST"
+            cards={players.EAST.handCards}
+            isRevealed={players.EAST.isRevealed}
+            levelRank={levelRank}
+            isCurrent={currentPos === 'EAST'}
+            selectedCardIds={selectedIds}
+            onToggleCard={handleToggleCard}
+            onToggleReveal={() => toggleReveal('EAST')}
+            onSetAsCurrent={() => handleSetCurrentPlayer('EAST')}
+            violatingCardIds={violationIds}
+            layoutMode="we-row"
           />
         </div>
-      </div>
 
-      {/* ── 东家 / 西家 与 南家 之间的空白地带：出牌记录 ───── */}
-      <div className="flex flex-col items-center justify-center gap-2 min-h-[200px] py-4 z-10">
-        <div className="flex flex-col gap-2 items-center w-full max-w-lg overflow-y-auto max-h-60 py-1">
-          {CENTER_HISTORY.length === 0 && (
-            <span className="text-green-900/50 text-sm italic">等待出牌…</span>
-          )}
-          {CENTER_HISTORY.map((action) => (
-            <div key={action.actionId} className="flex flex-col items-center gap-1">
-              <span
-                className={[
-                  'text-xs px-2 py-0.5 rounded-full font-semibold',
-                  action.isRuleViolation
-                    ? 'bg-red-600 text-white'
-                    : 'bg-green-700/60 text-green-200',
-                ].join(' ')}
-              >
-                {POSITION_ZH[action.playerId]} · {PLAY_TYPE_LABEL[action.playType]}
-                {action.isRuleViolation ? ' ⚠️违规' : ''}
-              </span>
-              {action.playedCards.length > 0 ? (
-                <div className="flex flex-row flex-wrap items-center justify-center gap-1">
-                  {action.playedCards.map((card) => {
-                    const actingLabel = card.actingAs
-                      ? `${SUIT_SYMBOL[card.actingAs.suit]}${card.actingAs.rank}`
-                      : undefined;
-                    return (
-                      <CardTile
-                        key={card.id}
-                        card={card}
-                        levelRank={levelRank}
-                        size="sm"
-                        actingAsLabel={actingLabel}
-                        ruleViolation={action.isRuleViolation}
-                      />
-                    );
-                  })}
-                </div>
-              ) : (
-                <span className="text-gray-400 text-xs italic">不出</span>
-              )}
+        {/* 中央：需压制提示（出牌记录已移至弹窗） */}
+        <div className="col-start-2 row-start-2 flex flex-col items-center justify-center gap-2 min-h-[80px] py-2">
+          {lastPattern && lastPattern.type !== 'Pass' && (
+            <div className="text-green-300 text-xs bg-green-900/40 px-3 py-1 rounded-full">
+              需压制：{PLAY_TYPE_LABEL[lastPattern.type]}（{lastPattern.length}张，
+              主值 {lastPattern.primaryValue}）
             </div>
-          ))}
+          )}
         </div>
 
-        {/* 当前需压制提示 */}
-        {lastPattern && lastPattern.type !== 'Pass' && (
-          <div className="text-green-300 text-xs bg-green-900/40 px-3 py-1 rounded-full">
-            需压制：{PLAY_TYPE_LABEL[lastPattern.type]}（{lastPattern.length}张，
-            主值 {lastPattern.primaryValue}）
-          </div>
-        )}
-      </div>
-
-      {/* ── 南家区域 ─────────────────────────────────────── */}
-      <div className="pb-4 pt-2 flex flex-col items-center gap-2 z-10">
-
-        {/* 操作台 */}
+        {/* 南家（底部中央，适当下移保证整体比例） */}
+        <div className="col-start-2 row-start-3 pb-4 pt-8 flex flex-col items-center gap-2">
+          <PlayedCardZone action={lastPlayByPlayer.SOUTH} levelRank={levelRank} />
+          {/* 操作台 */}
         <div className="relative flex items-center gap-2">
           {/* 错误气泡 */}
           {errorMsg && (
@@ -367,7 +334,7 @@ export default function MainTable() {
           </button>
         </div>
 
-        {/* 南家手牌 */}
+        {/* 南家手牌（同数字一列，列从右向左从小到大） */}
         <HandArea
           position="SOUTH"
           cards={players.SOUTH.handCards}
@@ -379,6 +346,7 @@ export default function MainTable() {
           onToggleReveal={() => toggleReveal('SOUTH')}
           onSetAsCurrent={() => handleSetCurrentPlayer('SOUTH')}
           violatingCardIds={violationIds}
+          layoutMode="ns-column"
         />
 
         {/* 已选牌预览气泡 */}
@@ -390,6 +358,7 @@ export default function MainTable() {
               : '非法牌型'}
           </div>
         )}
+        </div>
       </div>
 
       {/* 逢人配弹窗 */}

@@ -283,7 +283,8 @@ export const useGuandanStore = create<GuandanStore>()(
         if (idx === -1) return;
         const [removed] = state.players[playerPosition].handCards.splice(idx, 1);
         const key = cardPoolKey(removed.suit, removed.rank);
-        state.cardPool[key] = (state.cardPool[key] ?? 0) + 1;
+        const current = state.cardPool[key] ?? 0;
+        state.cardPool[key] = Math.min(2, current + 1); // 两副牌每种牌最多 2 张
         // 退牌后无需重排（顺序不变，只是少了一张）
       });
     },
@@ -292,9 +293,11 @@ export const useGuandanStore = create<GuandanStore>()(
       set((state) => {
         for (const card of state.players[position].handCards) {
           const key = cardPoolKey(card.suit, card.rank);
-          state.cardPool[key] = (state.cardPool[key] ?? 0) + 1;
+          const current = state.cardPool[key] ?? 0;
+          state.cardPool[key] = Math.min(2, current + 1); // 两副牌每种牌最多 2 张
         }
         state.players[position].handCards = [];
+        state.table.actionHistory = []; // 清空出牌记录
       });
     },
 
@@ -306,6 +309,7 @@ export const useGuandanStore = create<GuandanStore>()(
         }
         // 重置卡池为初始状态（每种牌2张）
         state.cardPool = buildInitialCardPool();
+        state.table.actionHistory = []; // 清空出牌记录
       });
     },
 
@@ -317,13 +321,21 @@ export const useGuandanStore = create<GuandanStore>()(
         }
         state.cardPool = buildInitialCardPool();
 
-        // 从卡池收集 108 张牌
+        // 从卡池按每种牌的数量收集（每种牌型最多 2 张，共 54 种 × 2 = 108 张）
         const remaining: { suit: Suit; rank: Rank }[] = [];
-        for (const card of generateInitialDeck()) {
-          const key = cardPoolKey(card.suit, card.rank);
+        const poolEntries: { suit: Suit; rank: Rank }[] = [];
+        for (const suit of SUITS) {
+          for (const rank of RANKS) {
+            poolEntries.push({ suit, rank });
+          }
+        }
+        poolEntries.push({ suit: 'Joker', rank: 'Small' });
+        poolEntries.push({ suit: 'Joker', rank: 'Big' });
+        for (const { suit, rank } of poolEntries) {
+          const key = cardPoolKey(suit, rank);
           const qty = state.cardPool[key] ?? 0;
           for (let i = 0; i < qty; i++) {
-            remaining.push({ suit: card.suit, rank: card.rank });
+            remaining.push({ suit, rank });
           }
         }
 
@@ -371,6 +383,8 @@ export const useGuandanStore = create<GuandanStore>()(
           newPool[key] = 0;
         }
         state.cardPool = newPool;
+
+        state.table.actionHistory = []; // 清空出牌记录
 
         sortAllHands(state.players, state.table.currentLevelRank);
       });

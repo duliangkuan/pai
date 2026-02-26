@@ -18,7 +18,8 @@ const POSITION_LABEL: Record<PlayerPosition, string> = {
   WEST: '西 👤',
 };
 
-const PLAYER_ORDER: PlayerPosition[] = ['EAST', 'NORTH', 'WEST', 'SOUTH'];
+/** 左西右东，与主牌桌布局一致 */
+const PLAYER_ORDER: PlayerPosition[] = ['WEST', 'NORTH', 'EAST', 'SOUTH'];
 
 export default function SetupMatrixPanel() {
   const {

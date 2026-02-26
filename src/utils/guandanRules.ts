@@ -45,6 +45,36 @@ export function sortCards(cards: Card[], currentLevelRank: Rank): Card[] {
   });
 }
 
+/** 排列用牌序：大王>小王>2>A>K>Q>J>10>9>8>7>6>5>4>3（3最小） */
+const RANK_ORDER_LARGE_TO_SMALL: Rank[] = ['Big', 'Small', '2', 'A', 'K', 'Q', 'J', '10', '9', '8', '7', '6', '5', '4', '3'];
+const RANK_ORDER_SMALL_TO_LARGE: Rank[] = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2', 'Small', 'Big'];
+
+/** 南北家：同数字一列，列从左到右=大到小（最右最小3），大王最左、小王次左 */
+export function groupCardsByRankForNS(cards: Card[]): Card[][] {
+  const groups: Partial<Record<Rank, Card[]>> = {};
+  for (const card of cards) {
+    if (!groups[card.rank]) groups[card.rank] = [];
+    groups[card.rank]!.push(card);
+  }
+  for (const rank of Object.keys(groups) as Rank[]) {
+    groups[rank]!.sort((a, b) => SUIT_PRIORITY[a.suit] - SUIT_PRIORITY[b.suit]);
+  }
+  return RANK_ORDER_LARGE_TO_SMALL.filter((r) => (groups[r]?.length ?? 0) > 0).map((r) => groups[r]!);
+}
+
+/** 西家/东家：同数字一行，行从下到上=小到大（最下最小3），大王最上、小王次上 */
+export function groupCardsByRankForWE(cards: Card[]): Card[][] {
+  const groups: Partial<Record<Rank, Card[]>> = {};
+  for (const card of cards) {
+    if (!groups[card.rank]) groups[card.rank] = [];
+    groups[card.rank]!.push(card);
+  }
+  for (const rank of Object.keys(groups) as Rank[]) {
+    groups[rank]!.sort((a, b) => SUIT_PRIORITY[a.suit] - SUIT_PRIORITY[b.suit]);
+  }
+  return RANK_ORDER_SMALL_TO_LARGE.filter((r) => (groups[r]?.length ?? 0) > 0).map((r) => groups[r]!);
+}
+
 // ============================================================
 // § 1  动态权值系统
 // ============================================================

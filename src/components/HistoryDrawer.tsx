@@ -1,13 +1,32 @@
 'use client';
 
 import React, { useCallback, useEffect, useState, useTransition } from 'react';
-import { GameSnapshot } from '@/types/guandan';
+import { GameSnapshot, PlayAction, PlayTypeName } from '@/types/guandan';
 import { useGuandanStore } from '@/store/useGuandanStore';
 import {
   deleteGameSnapshotFromKV,
   fetchGameSnapshotsFromKV,
   saveGameSnapshotToKV,
 } from '@/actions/guandan-kv';
+import CardTile from './CardTile';
+import { SUIT_SYMBOL } from './CardTile';
+
+const PLAY_TYPE_LABEL: Record<PlayTypeName, string> = {
+  Single: '单张',
+  Pair: '对子',
+  Triple: '三同张',
+  TripleWithPair: '三带二',
+  Straight: '顺子',
+  StraightFlush: '同花顺',
+  Tube: '三连对',
+  Plate: '钢板',
+  Bomb: '炸弹',
+  KingBomb: '四大天王',
+  Pass: '不出',
+  Invalid: '非法牌型',
+};
+
+const POSITION_ZH = { SOUTH: '南家', NORTH: '北家', EAST: '东家', WEST: '西家' } as const;
 
 export default function HistoryDrawer() {
   const { table, saveSnapshot, loadSnapshot } = useGuandanStore();
@@ -16,6 +35,7 @@ export default function HistoryDrawer() {
   const [snapshots, setSnapshots] = useState<GameSnapshot[]>([]);
   const [remarkInput, setRemarkInput] = useState('');
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showPlayRecordModal, setShowPlayRecordModal] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -94,8 +114,14 @@ export default function HistoryDrawer() {
         </div>
       )}
 
-      {/* ── 悬浮保存按钮（Header 右侧） ────────────────────── */}
+      {/* ── 悬浮按钮（Header 右侧） ─────────────────────────── */}
       <div className="fixed top-3 right-4 z-50 flex items-center gap-2">
+        <button
+          onClick={() => setShowPlayRecordModal(true)}
+          className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-xl shadow-lg transition-colors"
+        >
+          📋 出牌记录
+        </button>
         <button
           onClick={handleSaveClick}
           className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-sm rounded-xl shadow-lg transition-colors font-semibold"
@@ -109,6 +135,75 @@ export default function HistoryDrawer() {
           📂 历史记录
         </button>
       </div>
+
+      {/* ── 出牌记录弹窗 ───────────────────────────────────── */}
+      {showPlayRecordModal && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60"
+          onClick={() => setShowPlayRecordModal(false)}
+        >
+          <div
+            className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-[min(92vw,420px)] max-h-[80vh] flex flex-col shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-white font-bold text-base">📋 本局出牌记录</h3>
+              <button
+                onClick={() => setShowPlayRecordModal(false)}
+                className="text-gray-400 hover:text-white text-xl transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto flex flex-col gap-2 py-1">
+              {table.actionHistory.length === 0 ? (
+                <span className="text-gray-500 text-sm italic">暂无出牌记录</span>
+              ) : (
+                table.actionHistory.map((action: PlayAction) => (
+                  <div
+                    key={action.actionId}
+                    className={[
+                      'flex flex-col items-center gap-1 p-2 rounded-lg',
+                      action.isRuleViolation ? 'bg-red-900/30 ring-2 ring-red-500' : 'bg-gray-800',
+                    ].join(' ')}
+                  >
+                    <span
+                      className={[
+                        'text-xs px-2 py-0.5 rounded-full font-semibold',
+                        action.isRuleViolation ? 'bg-red-600 text-white' : 'bg-green-700/60 text-green-200',
+                      ].join(' ')}
+                    >
+                      {POSITION_ZH[action.playerId]} · {PLAY_TYPE_LABEL[action.playType]}
+                      {action.isRuleViolation ? ' ⚠️违规' : ''}
+                    </span>
+                    {action.playedCards.length > 0 ? (
+                      <div className="flex flex-row flex-wrap justify-center gap-1">
+                        {action.playedCards.map((card) => {
+                          const actingLabel = card.actingAs
+                            ? `${SUIT_SYMBOL[card.actingAs.suit]}${card.actingAs.rank}`
+                            : undefined;
+                          return (
+                            <CardTile
+                              key={card.id}
+                              card={card}
+                              levelRank={table.currentLevelRank}
+                              size="sm"
+                              actingAsLabel={actingLabel}
+                              ruleViolation={action.isRuleViolation}
+                            />
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 text-xs italic">不出</span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 保存备注弹窗 ───────────────────────────────────── */}
       {showSaveModal && (
