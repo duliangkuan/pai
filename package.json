@@ -8,9 +8,12 @@
     "start": "next start"
   },
   "dependencies": {
+    "@vercel/kv": "^3.0.0",
+    "immer": "^11.1.4",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
