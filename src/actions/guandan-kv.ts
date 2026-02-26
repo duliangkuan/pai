@@ -1,7 +1,15 @@
 'use server';
 
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
 import { GameSnapshot } from '@/types/guandan';
+
+// 创建 Redis 客户端，支持标准 REDIS_URL
+const kv = process.env.REDIS_URL 
+  ? Redis.fromEnv()
+  : new Redis({
+      url: process.env.KV_REST_API_URL || '',
+      token: process.env.KV_REST_API_TOKEN || '',
+    });
 
 const KV_LIST_KEY = 'guandan:snapshots:index';
 const KV_SNAP_PREFIX = 'guandan:snapshot:';
