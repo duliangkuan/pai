@@ -167,12 +167,24 @@ export default function SetupMatrixPanel() {
         >
           一键清空全盘
         </button>
-        <button
-          onClick={randomDeal}
-          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors"
-        >
-          随机发牌 🎲
-        </button>
+        {(() => {
+          const totalInPool = Object.values(cardPool).reduce((a, b) => a + b, 0);
+          const canRandomDeal = totalInPool > 0;
+          return (
+            <button
+              onClick={randomDeal}
+              disabled={!canRandomDeal}
+              className={[
+                'px-3 py-1.5 text-white text-sm rounded-lg transition-colors',
+                canRandomDeal
+                  ? 'bg-blue-600 hover:bg-blue-500 cursor-pointer'
+                  : 'bg-gray-500 cursor-not-allowed opacity-60',
+              ].join(' ')}
+            >
+              随机发牌 🎲
+            </button>
+          );
+        })()}
       </div>
 
       {/* ── 玩家槽位区 ─────────────────────────────────────── */}

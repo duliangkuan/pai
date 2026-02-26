@@ -300,19 +300,24 @@ export const useGuandanStore = create<GuandanStore>()(
 
     clearAllHands: () => {
       set((state) => {
+        // 清空所有玩家手牌
         for (const pos of ALL_POSITIONS) {
-          for (const card of state.players[pos].handCards) {
-            const key = cardPoolKey(card.suit, card.rank);
-            state.cardPool[key] = (state.cardPool[key] ?? 0) + 1;
-          }
           state.players[pos].handCards = [];
         }
+        // 重置卡池为初始状态（每种牌2张）
+        state.cardPool = buildInitialCardPool();
       });
     },
 
     randomDeal: () => {
       set((state) => {
-        // 收集剩余牌（根据 cardPool 数量）
+        // 一键随机发牌：先清空所有手牌，卡池恢复为两副牌 108 张
+        for (const pos of ALL_POSITIONS) {
+          state.players[pos].handCards = [];
+        }
+        state.cardPool = buildInitialCardPool();
+
+        // 从卡池收集 108 张牌
         const remaining: { suit: Suit; rank: Rank }[] = [];
         for (const card of generateInitialDeck()) {
           const key = cardPoolKey(card.suit, card.rank);
@@ -321,17 +326,19 @@ export const useGuandanStore = create<GuandanStore>()(
             remaining.push({ suit: card.suit, rank: card.rank });
           }
         }
+
         // Fisher-Yates 洗牌
         for (let i = remaining.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
         }
-        // 清空池子
-        for (const key of Object.keys(state.cardPool)) {
-          state.cardPool[key] = 0;
-        }
-        // 轮流发牌
-        remaining.forEach((item, i) => {
+
+        // 掼蛋规则：108 张牌一次性发完，每人 27 张
+        const cardsPerPlayer = 27;
+        const cardsToDeal = remaining.slice(0, cardsPerPlayer * 4);
+
+        // 轮流发牌（每人恰好 27 张）
+        cardsToDeal.forEach((item, i) => {
           const pos = PLAYER_ORDER[i % 4];
           const isLevelRank = item.rank === state.table.currentLevelRank;
           const isWildcard = isLevelRank && item.suit === 'Hearts';
@@ -357,7 +364,14 @@ export const useGuandanStore = create<GuandanStore>()(
             isWildcard,
           });
         });
-        // 发完统一理牌
+
+        // 发完后卡池归零（两副牌已全部发出）
+        const newPool = buildInitialCardPool();
+        for (const key of Object.keys(newPool)) {
+          newPool[key] = 0;
+        }
+        state.cardPool = newPool;
+
         sortAllHands(state.players, state.table.currentLevelRank);
       });
     },
