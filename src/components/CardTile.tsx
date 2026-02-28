@@ -3,7 +3,7 @@
 import React from 'react';
 import { Card, Rank, Suit } from '@/types/guandan';
 
-// ── 花色相关 ─────────────────────────────────────────────────
+// ── 花色/点数映射（供 SetupMatrixPanel 等外部使用）────────────────
 export const SUIT_SYMBOL: Record<Suit, string> = {
   Spades: '♠',
   Hearts: '♥',
@@ -20,24 +20,50 @@ export const SUIT_COLOR: Record<Suit, string> = {
   Joker: 'text-purple-700',
 };
 
-export const SUIT_BG: Record<Suit, string> = {
-  Spades: 'bg-white',
-  Hearts: 'bg-white',
-  Clubs: 'bg-white',
-  Diamonds: 'bg-white',
-  Joker: 'bg-purple-50',
+// ── 图片路径映射 ────────────────────────────────────────────────
+const SUIT_TO_FILENAME: Record<Exclude<Suit, 'Joker'>, string> = {
+  Spades: 'spade',
+  Hearts: 'heart',
+  Clubs: 'club',
+  Diamonds: 'diamond',
 };
+
+const RANK_TO_FILENAME: Record<Exclude<Rank, 'Small' | 'Big'>, string> = {
+  '2': '2',
+  '3': '3',
+  '4': '4',
+  '5': '5',
+  '6': '6',
+  '7': '7',
+  '8': '8',
+  '9': '9',
+  '10': '10',
+  J: 'J',
+  Q: 'Q',
+  K: 'K',
+  A: 'A',
+};
+
+export function getCardImagePath(card: Card, isRevealed: boolean): string {
+  if (!isRevealed) return '/cards/card-back.png';
+  if (card.suit === 'Joker') {
+    return card.rank === 'Big' ? '/cards/joker-big.png' : '/cards/joker-small.png';
+  }
+  const suit = SUIT_TO_FILENAME[card.suit];
+  const rank = RANK_TO_FILENAME[card.rank as Exclude<Rank, 'Small' | 'Big'>];
+  return `/cards/${suit}-${rank}.png`;
+}
 
 interface CardTileProps {
   card: Card;
   levelRank: Rank;
+  /** 是否明牌（false 时显示牌背） */
+  isRevealed?: boolean;
   /** 是否被选中（微微上浮） */
   selected?: boolean;
   /** 是否标记违规（红框） */
   ruleViolation?: boolean;
   onClick?: () => void;
-  /** 显示逢人配替代角标 */
-  actingAsLabel?: string;
   /** 尺寸 */
   size?: 'sm' | 'md' | 'lg';
   disabled?: boolean;
@@ -46,62 +72,52 @@ interface CardTileProps {
 export default function CardTile({
   card,
   levelRank,
+  isRevealed = true,
   selected = false,
   ruleViolation = false,
   onClick,
-  actingAsLabel,
   size = 'md',
   disabled = false,
 }: CardTileProps) {
-  const isWild = card.isWildcard;
-  const isJoker = card.suit === 'Joker';
-
   const sizeClass = {
-    sm: 'w-8 h-11 text-xs',
-    md: 'w-12 h-16 text-sm',
-    lg: 'w-16 h-22 text-base',
+    sm: 'w-8 h-11',
+    md: 'w-12 h-16',
+    lg: 'w-16 h-[88px]',
   }[size];
 
-  const displayRank = card.rank === 'Small' ? '小' : card.rank === 'Big' ? '大' : card.rank;
+  const actingLabel = card.actingAs
+    ? `${SUIT_SYMBOL[card.actingAs.suit]}${card.actingAs.rank === 'Small' ? '小' : card.actingAs.rank === 'Big' ? '大' : card.actingAs.rank}`
+    : undefined;
 
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       className={[
-        'relative rounded-lg border-2 flex flex-col items-center justify-center select-none transition-all duration-150 shadow-md',
+        'relative flex items-center justify-center select-none transition-all duration-150 overflow-hidden rounded-lg shadow-md',
         sizeClass,
-        SUIT_BG[card.suit],
-        disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:shadow-lg hover:-translate-y-0.5',
-        selected ? '-translate-y-3 shadow-xl ring-2 ring-yellow-400' : '',
-        ruleViolation ? 'ring-4 ring-red-500' : '',
-        isWild
-          ? 'border-yellow-500 shadow-[0_0_8px_2px_rgba(234,179,8,0.6)]'
-          : isJoker
-            ? 'border-purple-400'
-            : 'border-gray-200',
+        disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:shadow-lg hover:-translate-y-2 hover:z-50',
+        selected ? '-translate-y-3 shadow-xl ring-2 ring-yellow-400 z-50' : '',
+        ruleViolation ? 'ring-2 ring-red-500' : '',
       ]
         .filter(Boolean)
         .join(' ')}
     >
-      {/* 花色 + 点数 */}
-      <span className={`font-bold leading-tight ${SUIT_COLOR[card.suit]}`}>
-        {SUIT_SYMBOL[card.suit]}
-      </span>
-      <span className={`font-extrabold leading-tight ${SUIT_COLOR[card.suit]}`}>
-        {displayRank}
-      </span>
-
-      {/* 逢人配替代角标 */}
-      {actingAsLabel && (
-        <span className="absolute -top-2 -right-2 bg-yellow-400 text-gray-900 text-[9px] font-bold px-1 rounded-full shadow">
-          代{actingAsLabel}
+      <img
+        src={getCardImagePath(card, isRevealed)}
+        alt="card"
+        className="w-full h-full object-contain pointer-events-none"
+      />
+      {/* 逢人配打出时：代 X 角标 */}
+      {actingLabel && (
+        <span className="absolute -top-1 -right-1 bg-yellow-400 text-gray-900 text-[8px] font-bold px-0.5 rounded leading-tight shadow">
+          代{actingLabel}
         </span>
       )}
-
-      {/* 逢人配标识 */}
-      {isWild && (
-        <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 bg-yellow-400 text-gray-900 text-[8px] font-bold px-1 rounded-full leading-tight">
+      {/* 逢人配在手牌：配 角标 */}
+      {card.isWildcard && !actingLabel && isRevealed && (
+        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-yellow-400 text-gray-900 text-[8px] font-bold px-0.5 rounded leading-tight shadow">
           配
         </span>
       )}
