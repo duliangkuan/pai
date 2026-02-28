@@ -650,7 +650,7 @@ export function enumerateWildcardOptions(
       const result = identifyPattern(testCards, currentLevelRank);
       if (result.isValid && result.type !== 'Invalid') {
         const suitSymbol: Record<Suit, string> = {
-          Spades: '♠', Hearts: '♥', Clubs: '♣', Diamonds: '♦', Joker: '🃏',
+          Spades: '♠', Hearts: '♥', Clubs: '♣', Diamonds: '♦', Joker: '',
         };
         suggestions.push({
           suit,

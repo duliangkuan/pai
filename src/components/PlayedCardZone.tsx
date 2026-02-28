@@ -3,7 +3,6 @@
 import React from 'react';
 import { PlayAction, PlayTypeName, Rank } from '@/types/guandan';
 import CardTile from './CardTile';
-import { SUIT_SYMBOL } from './CardTile';
 
 const PLAY_TYPE_LABEL: Record<PlayTypeName, string> = {
   Single: '单张',
@@ -36,22 +35,17 @@ export default function PlayedCardZone({ action, levelRank }: PlayedCardZoneProp
       ].join(' ')}
     >
       {action.playedCards.length > 0 ? (
-        <div className="flex flex-row flex-wrap justify-center gap-0.5">
-          {action.playedCards.map((card) => {
-            const actingLabel = card.actingAs
-              ? `${SUIT_SYMBOL[card.actingAs.suit]}${card.actingAs.rank}`
-              : undefined;
-            return (
+        <div className="flex flex-row justify-center items-center origin-center">
+          {action.playedCards.map((card, idx) => (
+            <div key={card.id} className={idx > 0 ? '-ml-6' : ''}>
               <CardTile
-                key={card.id}
                 card={card}
                 levelRank={levelRank}
-                size="sm"
-                actingAsLabel={actingLabel}
+                size="md"
                 ruleViolation={action.isRuleViolation}
               />
-            );
-          })}
+            </div>
+          ))}
         </div>
       ) : (
         <span className="text-gray-400 text-xs italic">不出</span>

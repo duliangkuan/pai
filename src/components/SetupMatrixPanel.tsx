@@ -112,8 +112,7 @@ export default function SetupMatrixPanel() {
           .filter(Boolean)
           .join(' ')}
       >
-        <span className="text-lg leading-none">🃏</span>
-        <span className="text-[10px] leading-none mt-0.5">{label}</span>
+        <span className="text-base font-bold leading-none">{label}</span>
         <span
           className={[
             'absolute -top-1.5 -right-1.5 min-w-[16px] h-4 text-[10px] font-extrabold rounded-full flex items-center justify-center px-0.5',
@@ -217,10 +216,13 @@ export default function SetupMatrixPanel() {
                   const isWild = card.isWildcard;
                   const displayRank =
                     card.rank === 'Small' ? '小' : card.rank === 'Big' ? '大' : card.rank;
+                  const displayLabel = card.suit === 'Joker'
+                    ? (card.rank === 'Small' ? '小王' : '大王')
+                    : `${SUIT_SYMBOL[card.suit]}${displayRank}`;
                   return (
                     <button
                       key={card.id}
-                      title={`退回 ${SUIT_SYMBOL[card.suit]}${displayRank}`}
+                      title={`退回 ${displayLabel}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         returnCardFromPlayer(card.id, pos);
@@ -230,13 +232,15 @@ export default function SetupMatrixPanel() {
                         isWild
                           ? 'border-yellow-500 bg-yellow-900 text-yellow-300 shadow-[0_0_6px_rgba(234,179,8,0.5)]'
                           : card.suit === 'Joker'
-                            ? 'border-purple-500 bg-purple-900 text-purple-300'
+                            ? 'border-gray-500 bg-gray-800 text-gray-200'
                             : card.suit === 'Hearts' || card.suit === 'Diamonds'
                               ? 'border-red-400 bg-red-950 text-red-400'
                               : 'border-gray-400 bg-gray-900 text-gray-200',
                       ].join(' ')}
                     >
-                      <span className="leading-none text-[8px]">{SUIT_SYMBOL[card.suit]}</span>
+                      {card.suit !== 'Joker' && (
+                        <span className="leading-none text-[8px]">{SUIT_SYMBOL[card.suit]}</span>
+                      )}
                       <span className="leading-none">{displayRank}</span>
                     </button>
                   );
@@ -289,8 +293,8 @@ export default function SetupMatrixPanel() {
 
         {/* 王牌行 */}
         <div className="flex items-center gap-2 mt-2">
-          <div className="w-14 flex items-center justify-center text-xl font-bold text-purple-400">
-            🃏
+          <div className="w-14 flex items-center justify-center text-base font-bold text-gray-300">
+            王牌
           </div>
           {JOKER_RANKS.map((rank) => (
             <JokerCell key={rank} rank={rank} />

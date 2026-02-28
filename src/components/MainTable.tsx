@@ -199,7 +199,7 @@ export default function MainTable() {
       ? identifyPattern(selectedCards, levelRank)
       : null;
 
-  // ── 理牌按钮逻辑 ───────────────────────────────────────────
+  // ── 理牌 / 恢复 按钮逻辑（拆分为两个独立按钮）────────────────
   const currentOrganized = organizedGroups[currentPos];
   const hasAnyOrganized = currentOrganized.length > 0;
   const selectedIdSet = new Set(selectedIds);
@@ -216,34 +216,30 @@ export default function MainTable() {
     g.cardIds.some((id) => selectedIdSet.has(id))
   );
 
-  const isSelectedValidUnorganized =
+  // 理牌按钮：仅当选中未理牌的合法牌型时可点
+  const canOrganize =
     selectedCards.length > 0 &&
     previewPattern?.isValid &&
     previewPattern.type !== 'Invalid' &&
     !overlapsOrganized;
 
-  const isSelectedValidOrganized =
-    matchedOrganizedGroup != null && previewPattern?.isValid;
-
-  const showRestoreLabel =
-    hasAnyOrganized || (selectedCards.length > 0 && overlapsOrganized);
-
-  const canOrganize = isSelectedValidUnorganized;
-  const canRestoreOne = isSelectedValidOrganized;
+  // 恢复按钮：选中已理牌合法整组 或 未选任何牌且有理牌 时可点
+  const canRestoreOne = matchedOrganizedGroup != null && previewPattern?.isValid;
   const canRestoreAll = selectedIds.size === 0 && hasAnyOrganized;
+  const canRestore = canRestoreOne || canRestoreAll;
 
-  const organizeBtnEnabled = canOrganize || canRestoreOne || canRestoreAll;
-  const organizeBtnLabel = showRestoreLabel ? '恢复' : '理牌';
+  function handleOrganize() {
+    if (!canOrganize || !previewPattern) return;
+    organizeCards(currentPos, selectedIdsArr, {
+      type: previewPattern.type,
+      primaryValue: previewPattern.primaryValue,
+      length: previewPattern.length,
+    });
+    setSelectedIds(new Set());
+  }
 
-  function handleOrganizeOrRestore() {
-    if (canOrganize) {
-      organizeCards(currentPos, selectedIdsArr, {
-        type: previewPattern!.type,
-        primaryValue: previewPattern!.primaryValue,
-        length: previewPattern!.length,
-      });
-      setSelectedIds(new Set());
-    } else if (canRestoreOne && matchedOrganizedGroup) {
+  function handleRestore() {
+    if (canRestoreOne && matchedOrganizedGroup) {
       restoreOrganizedGroup(currentPos, matchedOrganizedGroup.cardIds);
       setSelectedIds(new Set());
     } else if (canRestoreAll) {
@@ -252,7 +248,7 @@ export default function MainTable() {
   }
 
   return (
-    <div className="relative w-full min-h-screen bg-[#0D5B46] flex flex-col select-none overflow-y-auto overflow-x-hidden pb-32">
+    <div className="relative w-full flex-1 min-h-0 bg-[#0D5B46] flex flex-col select-none overflow-hidden">
       {/* 桌面光晕 */}
       <div
         className="absolute inset-0 opacity-10 pointer-events-none"
@@ -262,10 +258,11 @@ export default function MainTable() {
         }}
       />
 
-      {/* ── 口字形布局：上北下南左西右东，牌竖着展示，上下滚动 ───── */}
-      <div className="grid grid-cols-[minmax(90px,1fr)_minmax(0,1fr)_minmax(90px,1fr)] grid-rows-[auto_1fr_auto] gap-2 px-2 flex-1 z-10 min-h-0 w-full max-w-full">
-        {/* 北家（顶部中央，同数字一列，列从右向左从小到大） */}
-        <div className="col-start-2 row-start-1 flex flex-col items-center justify-center pt-3 pb-1 min-w-0 gap-1">
+      {/* ── 口字形布局：固定视口，南家手牌贴底，横向区域扩大 ───── */}
+      <div className="grid grid-cols-[minmax(70px,0.4fr)_minmax(0,1.2fr)_minmax(70px,0.4fr)] grid-rows-[auto_1fr_auto] gap-2 px-2 flex-1 min-h-0 z-10 w-full max-w-full">
+        {/* 北家（顶部，手牌区域较短，仅占中间列宽度） */}
+        <div className="col-start-1 col-span-3 row-start-1 flex flex-col items-center justify-center pt-3 pb-1 min-w-0 gap-1 w-full">
+          <div className="w-fit min-w-0 max-w-[min(100%,calc(100%-140px))] mx-auto">
           <HandArea
             position="NORTH"
             cards={players.NORTH.handCards}
@@ -280,11 +277,12 @@ export default function MainTable() {
             layoutMode="ns-column"
             organizedGroups={organizedGroups.NORTH}
           />
+          </div>
           <PlayedCardZone action={lastPlayByPlayer.NORTH} levelRank={levelRank} />
         </div>
 
-        {/* 西家（左侧中央，同数字一行，行从下到上从小到大） */}
-        <div className="col-start-1 row-start-1 row-span-3 flex flex-row items-center justify-center min-w-0 overflow-visible gap-2">
+        {/* 西家（左侧中央，同数字一行，行从下到上从小到大，左侧留出绿色空白） */}
+        <div className="col-start-1 row-start-1 row-span-3 flex flex-row items-center justify-center min-w-0 overflow-visible gap-2 pl-5">
           <HandArea
             position="WEST"
             cards={players.WEST.handCards}
@@ -302,8 +300,8 @@ export default function MainTable() {
           <PlayedCardZone action={lastPlayByPlayer.WEST} levelRank={levelRank} />
         </div>
 
-        {/* 东家（右侧中央，同数字一行，行从下到上从小到大） */}
-        <div className="col-start-3 row-start-1 row-span-3 flex flex-row items-center justify-center min-w-0 overflow-visible gap-2">
+        {/* 东家（右侧中央，同数字一行，行从下到上从小到大，右侧留出绿色空白） */}
+        <div className="col-start-3 row-start-1 row-span-3 flex flex-row items-center justify-center min-w-0 overflow-visible gap-2 pr-5">
           <PlayedCardZone action={lastPlayByPlayer.EAST} levelRank={levelRank} />
           <HandArea
             position="EAST"
@@ -331,11 +329,11 @@ export default function MainTable() {
           )}
         </div>
 
-        {/* 南家（底部中央，适当下移保证整体比例） */}
-        <div className="col-start-2 row-start-3 pb-4 pt-8 flex flex-col items-center gap-2">
+        {/* 南家（贴底，手牌展示区下边界对齐屏幕底部，横向区域扩大） */}
+        <div className="col-start-1 col-span-3 row-start-3 flex flex-col items-center gap-2 pt-4 pb-3 justify-end w-full min-w-0">
           <PlayedCardZone action={lastPlayByPlayer.SOUTH} levelRank={levelRank} />
           {/* 操作台 */}
-        <div className="relative flex items-center gap-2">
+        <div className="relative flex items-center gap-2 shrink-0">
           {/* 错误气泡 */}
           {errorMsg && (
             <div className="absolute -top-11 left-1/2 -translate-x-1/2 bg-red-600 text-white text-xs px-3 py-1.5 rounded-xl shadow-xl whitespace-nowrap animate-fade-in z-20">
@@ -370,26 +368,38 @@ export default function MainTable() {
             {' ▶'}
           </button>
 
-          {/* 理牌/恢复 */}
+          {/* 理牌 */}
           <button
-            onClick={organizeBtnEnabled ? handleOrganizeOrRestore : undefined}
-            title={
-              organizeBtnEnabled
-                ? canOrganize
-                  ? '将选中合法牌型理牌'
-                  : canRestoreOne
-                    ? '恢复选中牌型到非理牌区'
-                    : '恢复全部理牌'
-                : '请选中合法牌型或已理牌型'
-            }
+            onClick={canOrganize ? handleOrganize : undefined}
+            title={canOrganize ? '将选中合法牌型理牌' : '请选中未理牌的合法牌型'}
             className={[
               'px-4 py-2 text-sm rounded-xl transition-colors',
-              organizeBtnEnabled
+              canOrganize
                 ? 'bg-amber-600 hover:bg-amber-500 text-white cursor-pointer'
                 : 'bg-gray-600 text-gray-400 cursor-not-allowed',
             ].join(' ')}
           >
-            {organizeBtnLabel}
+            理牌
+          </button>
+
+          {/* 恢复 */}
+          <button
+            onClick={canRestore ? handleRestore : undefined}
+            title={
+              canRestore
+                ? canRestoreOne
+                  ? '恢复选中牌型到散牌区'
+                  : '恢复全部理牌到散牌区'
+                : '请选中已理牌型或未选牌时点击全部恢复'
+            }
+            className={[
+              'px-4 py-2 text-sm rounded-xl transition-colors',
+              canRestore
+                ? 'bg-amber-600 hover:bg-amber-500 text-white cursor-pointer'
+                : 'bg-gray-600 text-gray-400 cursor-not-allowed',
+            ].join(' ')}
+          >
+            恢复
           </button>
 
           {/* 撤销 */}
@@ -413,31 +423,33 @@ export default function MainTable() {
           </button>
         </div>
 
-        {/* 南家手牌（同数字一列，列从右向左从小到大） */}
-        <HandArea
-          position="SOUTH"
-          cards={players.SOUTH.handCards}
-          isRevealed={players.SOUTH.isRevealed}
-          levelRank={levelRank}
-          isCurrent={currentPos === 'SOUTH'}
-          selectedCardIds={selectedIds}
-          onToggleCard={handleToggleCard}
-          onToggleReveal={() => toggleReveal('SOUTH')}
-          onSetAsCurrent={() => handleSetCurrentPlayer('SOUTH')}
-          violatingCardIds={violationIds}
-          layoutMode="ns-column"
-          organizedGroups={organizedGroups.SOUTH}
-        />
-
         {/* 已选牌预览气泡 */}
         {selectedIds.size > 0 && (
-          <div className="text-xs text-yellow-300 bg-gray-900/70 px-3 py-1 rounded-full">
+          <div className="text-xs text-yellow-300 bg-gray-900/70 px-3 py-1 rounded-full shrink-0">
             已选 {selectedIds.size} 张 ·{' '}
             {previewPattern?.isValid
               ? `${PLAY_TYPE_LABEL[previewPattern.type]}（主值 ${previewPattern.primaryValue}）`
               : '非法牌型'}
           </div>
         )}
+
+        {/* 南家手牌（贴底，与北家同宽，以较短的北家为准） */}
+        <div className="w-fit min-w-0 max-w-[min(100%,calc(100%-140px))] mx-auto">
+          <HandArea
+            position="SOUTH"
+            cards={players.SOUTH.handCards}
+            isRevealed={players.SOUTH.isRevealed}
+            levelRank={levelRank}
+            isCurrent={currentPos === 'SOUTH'}
+            selectedCardIds={selectedIds}
+            onToggleCard={handleToggleCard}
+            onToggleReveal={() => toggleReveal('SOUTH')}
+            onSetAsCurrent={() => handleSetCurrentPlayer('SOUTH')}
+            violatingCardIds={violationIds}
+            layoutMode="ns-column"
+            organizedGroups={organizedGroups.SOUTH}
+          />
+        </div>
         </div>
       </div>
 

@@ -9,7 +9,6 @@ import {
   saveGameSnapshotToKV,
 } from '@/actions/guandan-kv';
 import CardTile from './CardTile';
-import { SUIT_SYMBOL } from './CardTile';
 
 const PLAY_TYPE_LABEL: Record<PlayTypeName, string> = {
   Single: '单张',
@@ -178,21 +177,15 @@ export default function HistoryDrawer() {
                     </span>
                     {action.playedCards.length > 0 ? (
                       <div className="flex flex-row flex-wrap justify-center gap-1">
-                        {action.playedCards.map((card) => {
-                          const actingLabel = card.actingAs
-                            ? `${SUIT_SYMBOL[card.actingAs.suit]}${card.actingAs.rank}`
-                            : undefined;
-                          return (
-                            <CardTile
-                              key={card.id}
-                              card={card}
-                              levelRank={table.currentLevelRank}
-                              size="sm"
-                              actingAsLabel={actingLabel}
-                              ruleViolation={action.isRuleViolation}
-                            />
-                          );
-                        })}
+                        {action.playedCards.map((card) => (
+                          <CardTile
+                            key={card.id}
+                            card={card}
+                            levelRank={table.currentLevelRank}
+                            size="sm"
+                            ruleViolation={action.isRuleViolation}
+                          />
+                        ))}
                       </div>
                     ) : (
                       <span className="text-gray-400 text-xs italic">不出</span>

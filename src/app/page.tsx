@@ -68,7 +68,12 @@ export default function HomePage() {
       </header>
 
       {/* ── 主内容区 ───────────────────────────────────────── */}
-      <main className="flex-1 min-h-0 overflow-y-auto">
+      <main
+        className={[
+          'flex-1 min-h-0 flex flex-col',
+          activeTab === 'setup' ? 'overflow-y-auto' : 'overflow-hidden',
+        ].join(' ')}
+      >
         {activeTab === 'setup' ? (
           <SetupMatrixPanel />
         ) : (

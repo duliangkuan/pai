@@ -7,7 +7,7 @@ import {
   groupCardsByRankForWE,
   sortOrganizedGroups,
 } from '@/utils/guandanRules';
-import CardTile from './CardTile';
+import CardTile, { CardLayoutMode } from './CardTile';
 
 interface HandAreaProps {
   position: PlayerPosition;
@@ -45,6 +45,22 @@ function getCardsByIds(cards: Card[], ids: string[]): Card[] {
   return ids.map((id) => map.get(id)).filter((c): c is Card => c != null);
 }
 
+/** 南家：大尺寸，与东西家相同排列（列纵向堆叠） */
+const SOUTH_SIZE = 'lg' as const;
+const SOUTH_LAYOUT_MODE: CardLayoutMode = 'full';
+
+/** 北家：仅展示左上角小方块（数字+花色），同数字为一列 */
+const NORTH_LAYOUT_MODE: CardLayoutMode = 'corner-only';
+
+/** 东西家：与北家相同 corner-only 小方块，同数字为一行，西家左对齐、东家右对齐 */
+const EAST_WEST_LAYOUT_MODE: CardLayoutMode = 'corner-only';
+
+/** 北/东/西：列内垂直重叠，只露顶部 ~16px（md 牌高 68px） */
+const COLUMN_OVERLAP = '-mt-[52px]'; // 68-52=16px 可见
+
+/** 南家：列内重叠刚好盖住大花色（lg 牌高 90px，大花色中心偏下约 35-65px） */
+const SOUTH_COLUMN_OVERLAP = '-mt-[62px]'; // 下一张牌刚好完全盖住上一张的大花色
+
 export default function HandArea({
   position,
   cards,
@@ -79,9 +95,67 @@ export default function HandArea({
     return { bombGroups, unorganizedCards: unorg, nonBombGroups };
   }, [cards, organizedGroups]);
 
-  // NS：一列一列；WE：一行一行
-  const renderColumn = (columnCards: Card[], key: string) => (
-    <div key={key} className="flex flex-col-reverse gap-0.5 items-center">
+  // ── 南北东西统一：列横向排列，每列内牌纵向堆叠，垂直重叠 ──
+  const renderColumn = (
+    columnCards: Card[],
+    key: string,
+    size: 'sm' | 'md' | 'lg',
+    layoutMode: CardLayoutMode,
+    overlapClass?: string
+  ) => {
+    const overlap = overlapClass ?? COLUMN_OVERLAP;
+    return (
+    <div key={key} className="flex flex-col items-center">
+      {columnCards.map((card, idx) => {
+        const selected = isCurrent && selectedCardIds.has(card.id);
+        const ruleViolation = violatingCardIds.has(card.id);
+        return (
+          <div key={card.id} className={idx > 0 ? overlap : ''}>
+            <CardTile
+              card={card}
+              levelRank={levelRank}
+              isRevealed={isRevealed}
+              selected={selected}
+              ruleViolation={ruleViolation}
+              size={size}
+              layoutMode={layoutMode}
+              onClick={isCurrent ? () => onToggleCard?.(card) : undefined}
+              disabled={!isCurrent && onToggleCard !== undefined}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+  };
+
+  // 南家：大尺寸 + full 模式，底部对齐形成起始线，同数字从上往下排列，重叠刚好盖住大花色
+  const renderSouthZone = () => {
+    const bombCols = hasOrganized
+      ? bombGroups.map((g) => getCardsByIds(cards, g.cardIds))
+      : [];
+    const unorgCols = hasOrganized
+      ? groupCardsByRankForNS(unorganizedCards, levelRank)
+      : groupCardsByRankForNS(cards, levelRank);
+    const nonBombCols = hasOrganized
+      ? nonBombGroups.map((g) => getCardsByIds(cards, g.cardIds))
+      : [];
+    const allColumns = hasOrganized
+      ? [...bombCols, ...unorgCols, ...nonBombCols]
+      : unorgCols;
+
+    return (
+      <div className="flex flex-row items-end justify-center flex-wrap gap-1 w-fit max-w-full">
+        {allColumns.map((col, i) =>
+          renderColumn(col, `col-${i}`, SOUTH_SIZE, SOUTH_LAYOUT_MODE, SOUTH_COLUMN_OVERLAP)
+        )}
+      </div>
+    );
+  };
+
+  // 北家：同数字为一列，仅展示左上角，方格排列不重叠，上边界为起跑线
+  const renderNorthColumn = (columnCards: Card[], key: string) => (
+    <div key={key} className="flex flex-col items-center gap-2">
       {columnCards.map((card) => {
         const selected = isCurrent && selectedCardIds.has(card.id);
         const ruleViolation = violatingCardIds.has(card.id);
@@ -94,6 +168,7 @@ export default function HandArea({
             selected={selected}
             ruleViolation={ruleViolation}
             size="sm"
+            layoutMode={NORTH_LAYOUT_MODE}
             onClick={isCurrent ? () => onToggleCard?.(card) : undefined}
             disabled={!isCurrent && onToggleCard !== undefined}
           />
@@ -102,133 +177,49 @@ export default function HandArea({
     </div>
   );
 
-  const renderRow = (rowCards: Card[], key: string) => (
-    <div key={key} className="flex flex-row gap-0.5 justify-center flex-wrap">
-      {rowCards.map((card) => {
-        const selected = isCurrent && selectedCardIds.has(card.id);
-        const ruleViolation = violatingCardIds.has(card.id);
-        return (
-          <CardTile
-            key={card.id}
-            card={card}
-            levelRank={levelRank}
-            isRevealed={isRevealed}
-            selected={selected}
-            ruleViolation={ruleViolation}
-            size="sm"
-            onClick={isCurrent ? () => onToggleCard?.(card) : undefined}
-            disabled={!isCurrent && onToggleCard !== undefined}
-          />
-        );
-      })}
-    </div>
-  );
+  const renderNorthZone = () => {
+    const bombCols = hasOrganized
+      ? bombGroups.map((g) => getCardsByIds(cards, g.cardIds))
+      : [];
+    const unorgCols = hasOrganized
+      ? groupCardsByRankForNS(unorganizedCards, levelRank)
+      : groupCardsByRankForNS(cards, levelRank);
+    const nonBombCols = hasOrganized
+      ? nonBombGroups.map((g) => getCardsByIds(cards, g.cardIds))
+      : [];
+    const allColumns = hasOrganized
+      ? [...bombCols, ...unorgCols, ...nonBombCols]
+      : unorgCols;
 
-  return (
-    <div
-      className={[
-        'flex flex-col items-center gap-1 rounded-2xl p-1.5 transition-all duration-200',
-        // 焦点高亮：当前出牌方添加醒目金色光圈
-        isCurrent
-          ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[#0D5B46]'
-          : 'ring-0',
-      ].join(' ')}
-    >
-      {/* ── 玩家标签行 ─────────────────────────────────────── */}
-      <div className="flex items-center gap-1.5">
-        {/* 点击玩家名 → 上帝之手切换出牌方 */}
-        <button
-          onClick={onSetAsCurrent}
-          title={`点击将 ${POSITION_DISPLAY[position]} 设为当前出牌方`}
-          className={[
-            'text-xs font-bold px-2 py-0.5 rounded-full transition-colors',
-            isCurrent
-              ? 'bg-yellow-400 text-gray-900 cursor-default'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-500 hover:text-white cursor-pointer',
-          ].join(' ')}
-        >
-          {POSITION_DISPLAY[position]}
-          {isCurrent ? '' : ''}
-        </button>
-
-        {/* 🟢 当前出牌徽章 */}
-        {isCurrent && (
-          <span className="text-[10px] bg-green-500 text-white px-1.5 py-0.5 rounded-full font-semibold leading-tight animate-pulse">
-            🟢 出牌
-          </span>
+    return (
+      <div className="flex flex-row items-start justify-center flex-wrap gap-2 w-fit max-w-full">
+        {allColumns.map((col, i) =>
+          renderNorthColumn(col, `col-${i}`)
         )}
-
-        <span className="text-gray-400 text-xs">{cards.length}张</span>
-
-        {/* 眼睛按钮 */}
-        <button
-          onClick={onToggleReveal}
-          title={isRevealed ? '点击隐藏手牌' : '点击显示手牌'}
-          className="text-gray-400 hover:text-white transition-colors text-sm"
-        >
-          {isRevealed ? '👁️' : '🙈'}
-        </button>
       </div>
+    );
+  };
 
-      {/* ── 手牌展示区 ─────────────────────────────────────── */}
-      {isRevealed ? (
-        isNSColumn ? (
-          /* 南北家：炸弹区(左) | 非理牌区(中) | 非炸弹区(右)，每区从左到右=大到小 */
-          <div className="flex flex-row gap-0.5 justify-center items-end flex-wrap max-w-full">
-            {hasOrganized ? (
-              <>
-                {bombGroups.map((g, i) =>
-                  renderColumn(getCardsByIds(cards, g.cardIds), `bomb-${i}`)
-                )}
-                {groupCardsByRankForNS(unorganizedCards, levelRank).map((col, i) =>
-                  renderColumn(col, `unorg-${i}`)
-                )}
-                {nonBombGroups.map((g, i) =>
-                  renderColumn(getCardsByIds(cards, g.cardIds), `nobomb-${i}`)
-                )}
-              </>
-            ) : (
-              groupCardsByRankForNS(cards, levelRank).map((column, colIdx) =>
-                renderColumn(column, `col-${colIdx}`)
-              )
-            )}
-            {cards.length === 0 && (
-              <span className="text-gray-600 text-xs italic py-2">（空手）</span>
-            )}
-          </div>
-        ) : isWERow ? (
-          /* 东家/西家：炸弹区(上) | 非理牌区(中) | 非炸弹区(下)，每区从上到下=大到小 */
-          <div
-            className={
-              hasOrganized
-                ? 'flex flex-col gap-0.5 items-center'
-                : 'flex flex-col-reverse gap-0.5 items-center'
-            }
-          >
-            {hasOrganized ? (
-              <>
-                {bombGroups.map((g, i) =>
-                  renderRow(getCardsByIds(cards, g.cardIds), `bomb-${i}`)
-                )}
-                {[...groupCardsByRankForWE(unorganizedCards, levelRank)]
-                  .reverse()
-                  .map((row, i) => renderRow(row, `unorg-${i}`))}
-                {nonBombGroups.map((g, i) =>
-                  renderRow(getCardsByIds(cards, g.cardIds), `nobomb-${i}`)
-                )}
-              </>
-            ) : (
-              groupCardsByRankForWE(cards, levelRank).map((row, rowIdx) =>
-                renderRow(row, `row-${rowIdx}`)
-              )
-            )}
-            {cards.length === 0 && (
-              <span className="text-gray-600 text-xs italic py-2">（空手）</span>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-wrap justify-center gap-1 px-2">
-            {cards.map((card) => {
+  // 西家：corner-only 小方块，同数字为一行，以左侧为起始线和对齐线
+  const renderWestZone = () => {
+    const bombRows = hasOrganized
+      ? bombGroups.map((g) => getCardsByIds(cards, g.cardIds))
+      : [];
+    const unorgRows = hasOrganized
+      ? groupCardsByRankForWE(unorganizedCards, levelRank)
+      : groupCardsByRankForWE(cards, levelRank);
+    const nonBombRows = hasOrganized
+      ? nonBombGroups.map((g) => getCardsByIds(cards, g.cardIds))
+      : [];
+    const allRows = hasOrganized
+      ? [...bombRows, ...unorgRows, ...nonBombRows]
+      : unorgRows;
+
+    return (
+      <div className="flex flex-col items-start gap-2 w-full">
+        {allRows.map((rowCards, i) => (
+          <div key={`row-${i}`} className="flex flex-row gap-2">
+            {rowCards.map((card) => {
               const selected = isCurrent && selectedCardIds.has(card.id);
               const ruleViolation = violatingCardIds.has(card.id);
               return (
@@ -240,120 +231,165 @@ export default function HandArea({
                   selected={selected}
                   ruleViolation={ruleViolation}
                   size="sm"
+                  layoutMode={EAST_WEST_LAYOUT_MODE}
                   onClick={isCurrent ? () => onToggleCard?.(card) : undefined}
                   disabled={!isCurrent && onToggleCard !== undefined}
                 />
               );
             })}
-            {cards.length === 0 && (
-              <span className="text-gray-600 text-xs italic py-2">（空手）</span>
-            )}
           </div>
-        )
+        ))}
+      </div>
+    );
+  };
+
+  // 东家：corner-only 小方块，同数字为一行，以右侧为起始线和对齐线
+  const renderEastZone = () => {
+    const bombRows = hasOrganized
+      ? bombGroups.map((g) => getCardsByIds(cards, g.cardIds))
+      : [];
+    const unorgRows = hasOrganized
+      ? groupCardsByRankForWE(unorganizedCards, levelRank)
+      : groupCardsByRankForWE(cards, levelRank);
+    const nonBombRows = hasOrganized
+      ? nonBombGroups.map((g) => getCardsByIds(cards, g.cardIds))
+      : [];
+    const allRows = hasOrganized
+      ? [...bombRows, ...unorgRows, ...nonBombRows]
+      : unorgRows;
+
+    return (
+      <div className="flex flex-col items-end gap-2 w-full">
+        {allRows.map((rowCards, i) => (
+          <div key={`row-${i}`} className="flex flex-row gap-2">
+            {rowCards.map((card) => {
+              const selected = isCurrent && selectedCardIds.has(card.id);
+              const ruleViolation = violatingCardIds.has(card.id);
+              return (
+                <CardTile
+                  key={card.id}
+                  card={card}
+                  levelRank={levelRank}
+                  isRevealed={isRevealed}
+                  selected={selected}
+                  ruleViolation={ruleViolation}
+                  size="sm"
+                  layoutMode={EAST_WEST_LAYOUT_MODE}
+                  onClick={isCurrent ? () => onToggleCard?.(card) : undefined}
+                  disabled={!isCurrent && onToggleCard !== undefined}
+                />
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // ── 根据 position 选择渲染逻辑 ──
+  const renderHandCards = () => {
+    if (!isRevealed) {
+      // 暗牌：复用对应方位的布局，仅 isRevealed=false
+      if (position === 'SOUTH') return renderSouthZone();
+      if (position === 'NORTH') return renderNorthZone();
+      if (position === 'WEST') return renderWestZone();
+      if (position === 'EAST') return renderEastZone();
+    }
+    if (position === 'SOUTH' && isNSColumn) return renderSouthZone();
+    if (position === 'NORTH' && isNSColumn) return renderNorthZone();
+    if (position === 'WEST' && isWERow) return renderWestZone();
+    if (position === 'EAST' && isWERow) return renderEastZone();
+
+    // normal 模式：简单平铺（兼容旧逻辑）
+    return (
+      <div className="flex flex-wrap justify-center gap-1 px-2">
+        {cards.map((card) => {
+          const selected = isCurrent && selectedCardIds.has(card.id);
+          const ruleViolation = violatingCardIds.has(card.id);
+          return (
+            <CardTile
+              key={card.id}
+              card={card}
+              levelRank={levelRank}
+              isRevealed={isRevealed}
+              selected={selected}
+              ruleViolation={ruleViolation}
+              size="sm"
+              onClick={isCurrent ? () => onToggleCard?.(card) : undefined}
+              disabled={!isCurrent && onToggleCard !== undefined}
+            />
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div
+      className={[
+        'flex flex-col items-center gap-1 rounded-2xl p-1.5 transition-all duration-200 overflow-visible w-fit',
+        isCurrent
+          ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-[#0D5B46]'
+          : 'ring-0',
+      ].join(' ')}
+    >
+      {/* ── 玩家标签行 ─────────────────────────────────────── */}
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={onSetAsCurrent}
+          title={`点击将 ${POSITION_DISPLAY[position]} 设为当前出牌方`}
+          className={[
+            'text-xs font-bold px-2 py-0.5 rounded-full transition-colors',
+            isCurrent
+              ? 'bg-yellow-400 text-gray-900 cursor-default'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-500 hover:text-white cursor-pointer',
+          ].join(' ')}
+        >
+          {POSITION_DISPLAY[position]}
+        </button>
+
+        {isCurrent && (
+          <span className="text-[10px] bg-green-500 text-white px-1.5 py-0.5 rounded-full font-semibold leading-tight animate-pulse">
+            🟢 出牌
+          </span>
+        )}
+
+        <span className="text-gray-400 text-xs">{cards.length}张</span>
+
+        <button
+          onClick={onToggleReveal}
+          title={isRevealed ? '点击隐藏手牌' : '点击显示手牌'}
+          className="text-gray-400 hover:text-white transition-colors text-sm"
+        >
+          {isRevealed ? '👁️' : '🙈'}
+        </button>
+      </div>
+
+      {/* ── 手牌展示区 ─────────────────────────────────────── */}
+      {cards.length === 0 ? (
+        <span className="text-gray-600 text-xs italic py-2">（空手）</span>
+      ) : isRevealed ? (
+        renderHandCards()
       ) : (
-        /* 暗牌：显示牌背图片 */
-        isNSColumn ? (
-          <div className="flex flex-row gap-0.5 justify-center items-end flex-wrap max-w-full">
-            {hasOrganized ? (
-              <>
-                {bombGroups.map((g, i) => (
-                  <div key={`bomb-${i}`} className="flex flex-col-reverse gap-0.5 items-center">
-                    {getCardsByIds(cards, g.cardIds).map((card) => (
-                      <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
-                    ))}
-                  </div>
-                ))}
-                {groupCardsByRankForNS(unorganizedCards, levelRank).map((col, i) => (
-                  <div key={`unorg-${i}`} className="flex flex-col-reverse gap-0.5 items-center">
-                    {col.map((card) => (
-                      <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
-                    ))}
-                  </div>
-                ))}
-                {nonBombGroups.map((g, i) => (
-                  <div key={`nobomb-${i}`} className="flex flex-col-reverse gap-0.5 items-center">
-                    {getCardsByIds(cards, g.cardIds).map((card) => (
-                      <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
-                    ))}
-                  </div>
-                ))}
-              </>
-            ) : (
-              groupCardsByRankForNS(cards, levelRank).map((column, colIdx) => (
-                <div key={colIdx} className="flex flex-col-reverse gap-0.5 items-center">
-                  {column.map((card) => (
-                    <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
-                  ))}
-                </div>
-              ))
-            )}
-            {cards.length === 0 && (
-              <span className="text-gray-600 text-xs italic py-2">（空手）</span>
-            )}
-          </div>
-        ) : isWERow ? (
-          <div
-            className={
-              hasOrganized
-                ? 'flex flex-col gap-0.5 items-center'
-                : 'flex flex-col-reverse gap-0.5 items-center'
-            }
-          >
-            {hasOrganized ? (
-              <>
-                {bombGroups.map((g, i) => (
-                  <div key={`bomb-${i}`} className="flex flex-row gap-0.5 justify-center flex-wrap">
-                    {getCardsByIds(cards, g.cardIds).map((card) => (
-                      <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
-                    ))}
-                  </div>
-                ))}
-                {[...groupCardsByRankForWE(unorganizedCards, levelRank)]
-                  .reverse()
-                  .map((row, i) => (
-                    <div key={`unorg-${i}`} className="flex flex-row gap-0.5 justify-center flex-wrap">
-                      {row.map((card) => (
-                        <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
-                      ))}
-                    </div>
-                  ))}
-                {nonBombGroups.map((g, i) => (
-                  <div key={`nobomb-${i}`} className="flex flex-row gap-0.5 justify-center flex-wrap">
-                    {getCardsByIds(cards, g.cardIds).map((card) => (
-                      <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
-                    ))}
-                  </div>
-                ))}
-              </>
-            ) : (
-              groupCardsByRankForWE(cards, levelRank).map((row, rowIdx) => (
-                <div key={rowIdx} className="flex flex-row gap-0.5 justify-center flex-wrap">
-                  {row.map((card) => (
-                    <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
-                  ))}
-                </div>
-              ))
-            )}
-            {cards.length === 0 && (
-              <span className="text-gray-600 text-xs italic py-2">（空手）</span>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-wrap justify-center gap-1 px-2">
-            {cards.map((card) => (
-              <CardTile
-                key={card.id}
-                card={card}
-                levelRank={levelRank}
-                isRevealed={false}
-                size="sm"
-              />
-            ))}
-            {cards.length === 0 && (
-              <span className="text-gray-600 text-xs italic py-2">（空手）</span>
-            )}
-          </div>
-        )
+        (() => {
+          if (position === 'SOUTH' && isNSColumn) return renderSouthZone();
+          if (position === 'NORTH' && isNSColumn) return renderNorthZone();
+          if (position === 'WEST' && isWERow) return renderWestZone();
+          if (position === 'EAST' && isWERow) return renderEastZone();
+          return (
+            <div className="flex flex-wrap justify-center gap-1 px-2">
+              {cards.map((card) => (
+                <CardTile
+                  key={card.id}
+                  card={card}
+                  levelRank={levelRank}
+                  isRevealed={false}
+                  size="sm"
+                />
+              ))}
+            </div>
+          );
+        })()
       )}
     </div>
   );
