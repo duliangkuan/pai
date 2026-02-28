@@ -260,8 +260,8 @@ export default function MainTable() {
 
       {/* ── 中央出牌区：绝对定位脱离文档流，四家围成口字形 ───────────────────── */}
       <div className="absolute inset-0 pointer-events-none z-20">
-        {/* 口字形中央区域：留出边距避免遮挡手牌和按钮 */}
-        <div className="absolute inset-[32%_32%_34%_32%] flex flex-col">
+        {/* 口字形中央区域：留出边距避免遮挡手牌和按钮，出牌向中间靠拢 */}
+        <div className="absolute inset-[36%_36%_38%_36%] flex flex-col">
           {/* 北家出牌：口字上边，向下靠拢 */}
           <div className="flex flex-col items-center justify-end pt-2 pb-4 min-h-[60px] shrink-0">
             <div className="pointer-events-auto">
@@ -336,8 +336,8 @@ export default function MainTable() {
           </div>
         </div>
 
-        {/* 东家（右侧中央，同数字一行，行从下到上从小到大，可左右滑动查看全部牌） */}
-        <div className="relative col-start-3 row-start-1 row-span-3 flex flex-row items-center justify-end min-w-[140px] overflow-x-auto overflow-y-visible gap-2 pr-5 shrink-0 z-30">
+        {/* 东家（右侧中央，同数字一行，行从下到上从小到大，可左右滑动查看全部牌，结构与西家对称） */}
+        <div className="relative col-start-3 row-start-1 row-span-3 flex flex-row-reverse items-center justify-start min-w-[140px] overflow-x-auto overflow-y-visible gap-2 pr-5 shrink-0 z-30">
           <div className="shrink-0">
           <HandArea
             position="EAST"

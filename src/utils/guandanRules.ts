@@ -437,17 +437,7 @@ export function identifyPattern(cards: Card[], currentLevelRank: Rank): PatternR
   }
 
   // ── 更长牌型（7张以上）─────────────────────────────────
-  // 仅支持炸弹（已在上方处理） & 长顺子
-  if (n >= 7) {
-    // 炸弹已在最前面处理
-    // 尝试顺子（超长顺子理论上在掼蛋中不常见，但兼容）
-    const { ok: longStraight, highValue: lsh } = checkStraightLike(
-      nonWilds, wc, n, currentLevelRank, false
-    );
-    if (longStraight) {
-      return { type: 'Straight', primaryValue: lsh, length: n, isValid: true };
-    }
-  }
+  // 炸弹已在最前面处理；顺子只能是五张连续单牌，不支持长顺子
 
   return INVALID;
 }
