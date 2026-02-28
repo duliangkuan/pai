@@ -8,8 +8,6 @@ import { WildcardSuggestion } from '@/utils/guandanRules';
 import HandArea from './HandArea';
 import PlayedCardZone from './PlayedCardZone';
 import WildcardPopover from './WildcardPopover';
-import CardTile from './CardTile';
-import { SUIT_SYMBOL } from './CardTile';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const PLAY_TYPE_LABEL: Record<PlayTypeName, string> = {
@@ -40,6 +38,7 @@ export default function MainTable() {
   const {
     players,
     table,
+    organizedGroups,
     undo,
     redo,
     toggleReveal,
@@ -47,6 +46,9 @@ export default function MainTable() {
     playCards,
     passAction,
     saveSnapshot,
+    organizeCards,
+    restoreOrganizedGroup,
+    restoreAllOrganized,
     historyStack,
     redoStack,
   } = useGuandanStore();
@@ -197,6 +199,58 @@ export default function MainTable() {
       ? identifyPattern(selectedCards, levelRank)
       : null;
 
+  // ── 理牌按钮逻辑 ───────────────────────────────────────────
+  const currentOrganized = organizedGroups[currentPos];
+  const hasAnyOrganized = currentOrganized.length > 0;
+  const selectedIdSet = new Set(selectedIds);
+  const selectedIdsArr = [...selectedIds];
+
+  // 选中的牌是否完全匹配某个已理牌组
+  const matchedOrganizedGroup = currentOrganized.find((g) => {
+    if (g.cardIds.length !== selectedIdSet.size) return false;
+    return g.cardIds.every((id) => selectedIdSet.has(id));
+  });
+
+  // 选中的牌是否与任意已理牌组有重叠
+  const overlapsOrganized = currentOrganized.some((g) =>
+    g.cardIds.some((id) => selectedIdSet.has(id))
+  );
+
+  const isSelectedValidUnorganized =
+    selectedCards.length > 0 &&
+    previewPattern?.isValid &&
+    previewPattern.type !== 'Invalid' &&
+    !overlapsOrganized;
+
+  const isSelectedValidOrganized =
+    matchedOrganizedGroup != null && previewPattern?.isValid;
+
+  const showRestoreLabel =
+    hasAnyOrganized || (selectedCards.length > 0 && overlapsOrganized);
+
+  const canOrganize = isSelectedValidUnorganized;
+  const canRestoreOne = isSelectedValidOrganized;
+  const canRestoreAll = selectedIds.size === 0 && hasAnyOrganized;
+
+  const organizeBtnEnabled = canOrganize || canRestoreOne || canRestoreAll;
+  const organizeBtnLabel = showRestoreLabel ? '恢复' : '理牌';
+
+  function handleOrganizeOrRestore() {
+    if (canOrganize) {
+      organizeCards(currentPos, selectedIdsArr, {
+        type: previewPattern!.type,
+        primaryValue: previewPattern!.primaryValue,
+        length: previewPattern!.length,
+      });
+      setSelectedIds(new Set());
+    } else if (canRestoreOne && matchedOrganizedGroup) {
+      restoreOrganizedGroup(currentPos, matchedOrganizedGroup.cardIds);
+      setSelectedIds(new Set());
+    } else if (canRestoreAll) {
+      restoreAllOrganized(currentPos);
+    }
+  }
+
   return (
     <div className="relative w-full min-h-screen bg-[#0D5B46] flex flex-col select-none overflow-y-auto overflow-x-hidden pb-32">
       {/* 桌面光晕 */}
@@ -224,6 +278,7 @@ export default function MainTable() {
             onSetAsCurrent={() => handleSetCurrentPlayer('NORTH')}
             violatingCardIds={violationIds}
             layoutMode="ns-column"
+            organizedGroups={organizedGroups.NORTH}
           />
           <PlayedCardZone action={lastPlayByPlayer.NORTH} levelRank={levelRank} />
         </div>
@@ -242,6 +297,7 @@ export default function MainTable() {
             onSetAsCurrent={() => handleSetCurrentPlayer('WEST')}
             violatingCardIds={violationIds}
             layoutMode="we-row"
+            organizedGroups={organizedGroups.WEST}
           />
           <PlayedCardZone action={lastPlayByPlayer.WEST} levelRank={levelRank} />
         </div>
@@ -261,6 +317,7 @@ export default function MainTable() {
             onSetAsCurrent={() => handleSetCurrentPlayer('EAST')}
             violatingCardIds={violationIds}
             layoutMode="we-row"
+            organizedGroups={organizedGroups.EAST}
           />
         </div>
 
@@ -313,6 +370,28 @@ export default function MainTable() {
             {' ▶'}
           </button>
 
+          {/* 理牌/恢复 */}
+          <button
+            onClick={organizeBtnEnabled ? handleOrganizeOrRestore : undefined}
+            title={
+              organizeBtnEnabled
+                ? canOrganize
+                  ? '将选中合法牌型理牌'
+                  : canRestoreOne
+                    ? '恢复选中牌型到非理牌区'
+                    : '恢复全部理牌'
+                : '请选中合法牌型或已理牌型'
+            }
+            className={[
+              'px-4 py-2 text-sm rounded-xl transition-colors',
+              organizeBtnEnabled
+                ? 'bg-amber-600 hover:bg-amber-500 text-white cursor-pointer'
+                : 'bg-gray-600 text-gray-400 cursor-not-allowed',
+            ].join(' ')}
+          >
+            {organizeBtnLabel}
+          </button>
+
           {/* 撤销 */}
           <button
             onClick={undo}
@@ -347,6 +426,7 @@ export default function MainTable() {
           onSetAsCurrent={() => handleSetCurrentPlayer('SOUTH')}
           violatingCardIds={violationIds}
           layoutMode="ns-column"
+          organizedGroups={organizedGroups.SOUTH}
         />
 
         {/* 已选牌预览气泡 */}

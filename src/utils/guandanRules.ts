@@ -4,7 +4,7 @@
  *
  * 规则依据《竞技掼蛋竞赛规则》
  */
-import { Card, PatternResult, PlayTypeName, Rank, Suit } from '@/types/guandan';
+import { Card, OrganizedGroup, PatternResult, PlayTypeName, Rank, Suit } from '@/types/guandan';
 
 // ============================================================
 // § 0  理牌排序
@@ -45,25 +45,23 @@ export function sortCards(cards: Card[], currentLevelRank: Rank): Card[] {
   });
 }
 
-/** 排列用牌序：大王>小王>2>A>K>Q>J>10>9>8>7>6>5>4>3（3最小） */
-const RANK_ORDER_LARGE_TO_SMALL: Rank[] = ['Big', 'Small', '2', 'A', 'K', 'Q', 'J', '10', '9', '8', '7', '6', '5', '4', '3'];
-const RANK_ORDER_SMALL_TO_LARGE: Rank[] = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2', 'Small', 'Big'];
+/** 标准降序（不含王）：A > K > Q > J > 10 > 9 > 8 > 7 > 6 > 5 > 4 > 3 > 2 */
+const STANDARD_DESC: Rank[] = ['A', 'K', 'Q', 'J', '10', '9', '8', '7', '6', '5', '4', '3', '2'];
 
-/** 南北家：同数字一列，列从左到右=大到小（最右最小3），大王最左、小王次左 */
-export function groupCardsByRankForNS(cards: Card[]): Card[][] {
-  const groups: Partial<Record<Rank, Card[]>> = {};
-  for (const card of cards) {
-    if (!groups[card.rank]) groups[card.rank] = [];
-    groups[card.rank]!.push(card);
+/**
+ * 根据当前级数返回单张大小顺序（从大到小）。
+ * 规则：大王 > 小王 > 级牌 > 其余 12 张（标准降序剔除级牌）
+ */
+export function getRankOrderLargeToSmall(levelRank: Rank): Rank[] {
+  if (levelRank === 'Small' || levelRank === 'Big') {
+    return ['Big', 'Small', ...STANDARD_DESC];
   }
-  for (const rank of Object.keys(groups) as Rank[]) {
-    groups[rank]!.sort((a, b) => SUIT_PRIORITY[a.suit] - SUIT_PRIORITY[b.suit]);
-  }
-  return RANK_ORDER_LARGE_TO_SMALL.filter((r) => (groups[r]?.length ?? 0) > 0).map((r) => groups[r]!);
+  const rest = STANDARD_DESC.filter((r) => r !== levelRank);
+  return ['Big', 'Small', levelRank, ...rest];
 }
 
-/** 西家/东家：同数字一行，行从下到上=小到大（最下最小3），大王最上、小王次上 */
-export function groupCardsByRankForWE(cards: Card[]): Card[][] {
+/** 南北家：同数字一列，列从左到右=大到小，大王最左、小王次左 */
+export function groupCardsByRankForNS(cards: Card[], levelRank: Rank): Card[][] {
   const groups: Partial<Record<Rank, Card[]>> = {};
   for (const card of cards) {
     if (!groups[card.rank]) groups[card.rank] = [];
@@ -72,7 +70,22 @@ export function groupCardsByRankForWE(cards: Card[]): Card[][] {
   for (const rank of Object.keys(groups) as Rank[]) {
     groups[rank]!.sort((a, b) => SUIT_PRIORITY[a.suit] - SUIT_PRIORITY[b.suit]);
   }
-  return RANK_ORDER_SMALL_TO_LARGE.filter((r) => (groups[r]?.length ?? 0) > 0).map((r) => groups[r]!);
+  const order = getRankOrderLargeToSmall(levelRank);
+  return order.filter((r) => (groups[r]?.length ?? 0) > 0).map((r) => groups[r]!);
+}
+
+/** 西家/东家：同数字一行，行从下到上=小到大，大王最上、小王次上 */
+export function groupCardsByRankForWE(cards: Card[], levelRank: Rank): Card[][] {
+  const groups: Partial<Record<Rank, Card[]>> = {};
+  for (const card of cards) {
+    if (!groups[card.rank]) groups[card.rank] = [];
+    groups[card.rank]!.push(card);
+  }
+  for (const rank of Object.keys(groups) as Rank[]) {
+    groups[rank]!.sort((a, b) => SUIT_PRIORITY[a.suit] - SUIT_PRIORITY[b.suit]);
+  }
+  const order = [...getRankOrderLargeToSmall(levelRank)].reverse();
+  return order.filter((r) => (groups[r]?.length ?? 0) > 0).map((r) => groups[r]!);
 }
 
 // ============================================================
@@ -508,10 +521,17 @@ function tryTripleWithPair(
 // ============================================================
 
 /**
- * 计算牌型的"炸弹等级"：
+ * 判断牌型是否为炸弹类（Bomb/StraightFlush/KingBomb）
+ */
+export function isBombType(pattern: PatternResult): boolean {
+  return pattern.type === 'Bomb' || pattern.type === 'StraightFlush' || pattern.type === 'KingBomb';
+}
+
+/**
+ * 计算牌型的"炸弹等级"（用于理牌区排序）：
  *   四大天王=7, 8+张炸=6, 7张炸=5, 6张炸=4, 同花顺=3, 5张炸=2, 4张炸=1, 非炸=0
  */
-function bombRank(pattern: PatternResult): number {
+export function getBombRank(pattern: PatternResult): number {
   if (pattern.type === 'KingBomb') return 7;
   if (pattern.type === 'StraightFlush') return 3;
   if (pattern.type === 'Bomb') {
@@ -539,8 +559,8 @@ export function canBeat(
   if (!newPattern.isValid || !oldPattern.isValid) return false;
   if (oldPattern.type === 'Pass') return true;
 
-  const newBR = bombRank(newPattern);
-  const oldBR = bombRank(oldPattern);
+  const newBR = getBombRank(newPattern);
+  const oldBR = getBombRank(oldPattern);
 
   // 都是炸弹类型（含同花顺）
   if (newBR > 0 && oldBR > 0) {
@@ -560,6 +580,24 @@ export function canBeat(
   if (newPattern.type !== oldPattern.type) return false;
   if (newPattern.length !== oldPattern.length) return false;
   return newPattern.primaryValue > oldPattern.primaryValue;
+}
+
+/**
+ * 理牌区排序：从大到小。
+ * 炸弹：先按 bombRank，再按 primaryValue，再按 length。
+ * 非炸弹：按 primaryValue 降序。
+ */
+export function sortOrganizedGroups(groups: OrganizedGroup[]): OrganizedGroup[] {
+  return [...groups].sort((a, b) => {
+    if (a.isBomb !== b.isBomb) return a.isBomb ? -1 : 1; // 炸弹在前（同区内不会混）
+    const patternA: PatternResult = { type: a.type, primaryValue: a.primaryValue, length: a.length, isValid: true };
+    const patternB: PatternResult = { type: b.type, primaryValue: b.primaryValue, length: b.length, isValid: true };
+    const rA = getBombRank(patternA);
+    const rB = getBombRank(patternB);
+    if (rA !== rB) return rB - rA; // 炸弹等级高的在前
+    if (a.primaryValue !== b.primaryValue) return b.primaryValue - a.primaryValue;
+    return b.length - a.length;
+  });
 }
 
 // ============================================================

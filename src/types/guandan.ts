@@ -84,6 +84,8 @@ export interface GameSnapshot {
   timestamp: number;
   playersState: Record<PlayerPosition, Player>;
   tableState: TableState;
+  /** 各玩家的理牌分组（用于撤销/重做时恢复） */
+  organizedGroupsState?: Record<PlayerPosition, OrganizedGroup[]>;
   /** 可选的备注（保存到云端时使用） */
   remark?: string;
 }
@@ -96,4 +98,14 @@ export interface PatternResult {
   /** 牌的数量 */
   length: number;
   isValid: boolean;
+}
+
+/** 理牌后的牌组（一组合法牌型） */
+export interface OrganizedGroup {
+  cardIds: string[];
+  type: PlayTypeName;
+  primaryValue: number;
+  length: number;
+  /** 是否为炸弹类（Bomb/StraightFlush/KingBomb） */
+  isBomb: boolean;
 }

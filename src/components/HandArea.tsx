@@ -1,10 +1,13 @@
 'use client';
 
-import React from 'react';
-import { Card, PlayerPosition, Rank } from '@/types/guandan';
-import { groupCardsByRankForNS, groupCardsByRankForWE } from '@/utils/guandanRules';
+import React, { useMemo } from 'react';
+import { Card, OrganizedGroup, PlayerPosition, Rank } from '@/types/guandan';
+import {
+  groupCardsByRankForNS,
+  groupCardsByRankForWE,
+  sortOrganizedGroups,
+} from '@/utils/guandanRules';
 import CardTile from './CardTile';
-import { SUIT_SYMBOL } from './CardTile';
 
 interface HandAreaProps {
   position: PlayerPosition;
@@ -25,6 +28,8 @@ interface HandAreaProps {
   violatingCardIds?: Set<string>;
   /** 南北家：同数字一列，列从右向左从小到大；西东家：同数字一行，行从下到上从小到大 */
   layoutMode?: 'normal' | 'ns-column' | 'we-row';
+  /** 理牌分组（仅 ns-column / we-row 时生效） */
+  organizedGroups?: OrganizedGroup[];
 }
 
 const POSITION_DISPLAY: Record<PlayerPosition, string> = {
@@ -33,6 +38,12 @@ const POSITION_DISPLAY: Record<PlayerPosition, string> = {
   EAST: '东家',
   WEST: '西家',
 };
+
+/** 从 id 列表取牌（保持 group 内顺序） */
+function getCardsByIds(cards: Card[], ids: string[]): Card[] {
+  const map = new Map(cards.map((c) => [c.id, c]));
+  return ids.map((id) => map.get(id)).filter((c): c is Card => c != null);
+}
 
 export default function HandArea({
   position,
@@ -46,9 +57,72 @@ export default function HandArea({
   onSetAsCurrent,
   violatingCardIds = new Set(),
   layoutMode = 'normal',
+  organizedGroups = [],
 }: HandAreaProps) {
   const isNSColumn = layoutMode === 'ns-column';
   const isWERow = layoutMode === 'we-row';
+  const hasOrganized = organizedGroups.length > 0;
+
+  // 理牌三区：炸弹区 | 非理牌区 | 非炸弹区
+  const { bombGroups, unorganizedCards, nonBombGroups } = useMemo(() => {
+    const inAnyGroup = new Set<string>();
+    for (const g of organizedGroups) {
+      for (const id of g.cardIds) inAnyGroup.add(id);
+    }
+    const unorg = cards.filter((c) => !inAnyGroup.has(c.id));
+    const bombGroups = sortOrganizedGroups(
+      organizedGroups.filter((g) => g.isBomb)
+    );
+    const nonBombGroups = sortOrganizedGroups(
+      organizedGroups.filter((g) => !g.isBomb)
+    );
+    return { bombGroups, unorganizedCards: unorg, nonBombGroups };
+  }, [cards, organizedGroups]);
+
+  // NS：一列一列；WE：一行一行
+  const renderColumn = (columnCards: Card[], key: string) => (
+    <div key={key} className="flex flex-col-reverse gap-0.5 items-center">
+      {columnCards.map((card) => {
+        const selected = isCurrent && selectedCardIds.has(card.id);
+        const ruleViolation = violatingCardIds.has(card.id);
+        return (
+          <CardTile
+            key={card.id}
+            card={card}
+            levelRank={levelRank}
+            isRevealed={isRevealed}
+            selected={selected}
+            ruleViolation={ruleViolation}
+            size="sm"
+            onClick={isCurrent ? () => onToggleCard?.(card) : undefined}
+            disabled={!isCurrent && onToggleCard !== undefined}
+          />
+        );
+      })}
+    </div>
+  );
+
+  const renderRow = (rowCards: Card[], key: string) => (
+    <div key={key} className="flex flex-row gap-0.5 justify-center flex-wrap">
+      {rowCards.map((card) => {
+        const selected = isCurrent && selectedCardIds.has(card.id);
+        const ruleViolation = violatingCardIds.has(card.id);
+        return (
+          <CardTile
+            key={card.id}
+            card={card}
+            levelRank={levelRank}
+            isRevealed={isRevealed}
+            selected={selected}
+            ruleViolation={ruleViolation}
+            size="sm"
+            onClick={isCurrent ? () => onToggleCard?.(card) : undefined}
+            disabled={!isCurrent && onToggleCard !== undefined}
+          />
+        );
+      })}
+    </div>
+  );
 
   return (
     <div
@@ -99,63 +173,55 @@ export default function HandArea({
       {/* ── 手牌展示区 ─────────────────────────────────────── */}
       {isRevealed ? (
         isNSColumn ? (
-          /* 南北家：同数字一列，列从左到右=大到小（最右最小），大王最左、小王次左 */
+          /* 南北家：炸弹区(左) | 非理牌区(中) | 非炸弹区(右)，每区从左到右=大到小 */
           <div className="flex flex-row gap-0.5 justify-center items-end flex-wrap max-w-full">
-            {groupCardsByRankForNS(cards).map((column, colIdx) => (
-              <div key={colIdx} className="flex flex-col-reverse gap-0.5 items-center">
-                {column.map((card) => {
-                  const selected = isCurrent && selectedCardIds.has(card.id);
-                  const ruleViolation = violatingCardIds.has(card.id);
-                  const actingLabel = card.actingAs
-                    ? `${SUIT_SYMBOL[card.actingAs.suit]}${card.actingAs.rank}`
-                    : undefined;
-                  return (
-                    <CardTile
-                      key={card.id}
-                      card={card}
-                      levelRank={levelRank}
-                      selected={selected}
-                      ruleViolation={ruleViolation}
-                      actingAsLabel={actingLabel}
-                      size="sm"
-                      onClick={isCurrent ? () => onToggleCard?.(card) : undefined}
-                      disabled={!isCurrent && onToggleCard !== undefined}
-                    />
-                  );
-                })}
-              </div>
-            ))}
+            {hasOrganized ? (
+              <>
+                {bombGroups.map((g, i) =>
+                  renderColumn(getCardsByIds(cards, g.cardIds), `bomb-${i}`)
+                )}
+                {groupCardsByRankForNS(unorganizedCards, levelRank).map((col, i) =>
+                  renderColumn(col, `unorg-${i}`)
+                )}
+                {nonBombGroups.map((g, i) =>
+                  renderColumn(getCardsByIds(cards, g.cardIds), `nobomb-${i}`)
+                )}
+              </>
+            ) : (
+              groupCardsByRankForNS(cards, levelRank).map((column, colIdx) =>
+                renderColumn(column, `col-${colIdx}`)
+              )
+            )}
             {cards.length === 0 && (
               <span className="text-gray-600 text-xs italic py-2">（空手）</span>
             )}
           </div>
         ) : isWERow ? (
-          /* 西家/东家：同数字一行，行从下到上=小到大（最下最小），大王最上、小王次上 */
-          <div className="flex flex-col-reverse gap-0.5 items-center">
-            {groupCardsByRankForWE(cards).map((row, rowIdx) => (
-              <div key={rowIdx} className="flex flex-row gap-0.5 justify-center flex-wrap">
-                {row.map((card) => {
-                  const selected = isCurrent && selectedCardIds.has(card.id);
-                  const ruleViolation = violatingCardIds.has(card.id);
-                  const actingLabel = card.actingAs
-                    ? `${SUIT_SYMBOL[card.actingAs.suit]}${card.actingAs.rank}`
-                    : undefined;
-                  return (
-                    <CardTile
-                      key={card.id}
-                      card={card}
-                      levelRank={levelRank}
-                      selected={selected}
-                      ruleViolation={ruleViolation}
-                      actingAsLabel={actingLabel}
-                      size="sm"
-                      onClick={isCurrent ? () => onToggleCard?.(card) : undefined}
-                      disabled={!isCurrent && onToggleCard !== undefined}
-                    />
-                  );
-                })}
-              </div>
-            ))}
+          /* 东家/西家：炸弹区(上) | 非理牌区(中) | 非炸弹区(下)，每区从上到下=大到小 */
+          <div
+            className={
+              hasOrganized
+                ? 'flex flex-col gap-0.5 items-center'
+                : 'flex flex-col-reverse gap-0.5 items-center'
+            }
+          >
+            {hasOrganized ? (
+              <>
+                {bombGroups.map((g, i) =>
+                  renderRow(getCardsByIds(cards, g.cardIds), `bomb-${i}`)
+                )}
+                {[...groupCardsByRankForWE(unorganizedCards, levelRank)]
+                  .reverse()
+                  .map((row, i) => renderRow(row, `unorg-${i}`))}
+                {nonBombGroups.map((g, i) =>
+                  renderRow(getCardsByIds(cards, g.cardIds), `nobomb-${i}`)
+                )}
+              </>
+            ) : (
+              groupCardsByRankForWE(cards, levelRank).map((row, rowIdx) =>
+                renderRow(row, `row-${rowIdx}`)
+              )
+            )}
             {cards.length === 0 && (
               <span className="text-gray-600 text-xs italic py-2">（空手）</span>
             )}
@@ -165,17 +231,14 @@ export default function HandArea({
             {cards.map((card) => {
               const selected = isCurrent && selectedCardIds.has(card.id);
               const ruleViolation = violatingCardIds.has(card.id);
-              const actingLabel = card.actingAs
-                ? `${SUIT_SYMBOL[card.actingAs.suit]}${card.actingAs.rank}`
-                : undefined;
               return (
                 <CardTile
                   key={card.id}
                   card={card}
                   levelRank={levelRank}
+                  isRevealed={isRevealed}
                   selected={selected}
                   ruleViolation={ruleViolation}
-                  actingAsLabel={actingLabel}
                   size="sm"
                   onClick={isCurrent ? () => onToggleCard?.(card) : undefined}
                   disabled={!isCurrent && onToggleCard !== undefined}
@@ -188,48 +251,109 @@ export default function HandArea({
           </div>
         )
       ) : (
-        /* 暗牌：显示牌背 */
-        <div
-          className={`flex gap-1 px-2 ${
-            isNSColumn
-              ? 'flex-row flex-wrap justify-center items-end'
-              : isWERow
-                ? 'flex-col-reverse items-center'
-                : 'flex-wrap justify-center'
-          }`}
-        >
-          {isNSColumn
-            ? groupCardsByRankForNS(cards).map((column, colIdx) => (
+        /* 暗牌：显示牌背图片 */
+        isNSColumn ? (
+          <div className="flex flex-row gap-0.5 justify-center items-end flex-wrap max-w-full">
+            {hasOrganized ? (
+              <>
+                {bombGroups.map((g, i) => (
+                  <div key={`bomb-${i}`} className="flex flex-col-reverse gap-0.5 items-center">
+                    {getCardsByIds(cards, g.cardIds).map((card) => (
+                      <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
+                    ))}
+                  </div>
+                ))}
+                {groupCardsByRankForNS(unorganizedCards, levelRank).map((col, i) => (
+                  <div key={`unorg-${i}`} className="flex flex-col-reverse gap-0.5 items-center">
+                    {col.map((card) => (
+                      <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
+                    ))}
+                  </div>
+                ))}
+                {nonBombGroups.map((g, i) => (
+                  <div key={`nobomb-${i}`} className="flex flex-col-reverse gap-0.5 items-center">
+                    {getCardsByIds(cards, g.cardIds).map((card) => (
+                      <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
+                    ))}
+                  </div>
+                ))}
+              </>
+            ) : (
+              groupCardsByRankForNS(cards, levelRank).map((column, colIdx) => (
                 <div key={colIdx} className="flex flex-col-reverse gap-0.5 items-center">
                   {column.map((card) => (
-                    <div
-                      key={card.id}
-                      className="w-8 h-11 rounded-lg bg-gradient-to-br from-blue-800 to-blue-950 border border-blue-600 shadow"
-                    />
+                    <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
                   ))}
                 </div>
               ))
-            : isWERow
-              ? groupCardsByRankForWE(cards).map((row, rowIdx) => (
-                  <div key={rowIdx} className="flex flex-row gap-0.5 justify-center flex-wrap">
-                    {row.map((card) => (
-                      <div
-                        key={card.id}
-                        className="w-8 h-11 rounded-lg bg-gradient-to-br from-blue-800 to-blue-950 border border-blue-600 shadow"
-                      />
+            )}
+            {cards.length === 0 && (
+              <span className="text-gray-600 text-xs italic py-2">（空手）</span>
+            )}
+          </div>
+        ) : isWERow ? (
+          <div
+            className={
+              hasOrganized
+                ? 'flex flex-col gap-0.5 items-center'
+                : 'flex flex-col-reverse gap-0.5 items-center'
+            }
+          >
+            {hasOrganized ? (
+              <>
+                {bombGroups.map((g, i) => (
+                  <div key={`bomb-${i}`} className="flex flex-row gap-0.5 justify-center flex-wrap">
+                    {getCardsByIds(cards, g.cardIds).map((card) => (
+                      <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
                     ))}
                   </div>
-                ))
-              : cards.map((card) => (
-                  <div
-                    key={card.id}
-                    className="w-8 h-11 rounded-lg bg-gradient-to-br from-blue-800 to-blue-950 border border-blue-600 shadow"
-                  />
                 ))}
-          {cards.length === 0 && (
-            <span className="text-gray-600 text-xs italic py-2">（空手）</span>
-          )}
-        </div>
+                {[...groupCardsByRankForWE(unorganizedCards, levelRank)]
+                  .reverse()
+                  .map((row, i) => (
+                    <div key={`unorg-${i}`} className="flex flex-row gap-0.5 justify-center flex-wrap">
+                      {row.map((card) => (
+                        <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
+                      ))}
+                    </div>
+                  ))}
+                {nonBombGroups.map((g, i) => (
+                  <div key={`nobomb-${i}`} className="flex flex-row gap-0.5 justify-center flex-wrap">
+                    {getCardsByIds(cards, g.cardIds).map((card) => (
+                      <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
+                    ))}
+                  </div>
+                ))}
+              </>
+            ) : (
+              groupCardsByRankForWE(cards, levelRank).map((row, rowIdx) => (
+                <div key={rowIdx} className="flex flex-row gap-0.5 justify-center flex-wrap">
+                  {row.map((card) => (
+                    <CardTile key={card.id} card={card} levelRank={levelRank} isRevealed={false} size="sm" />
+                  ))}
+                </div>
+              ))
+            )}
+            {cards.length === 0 && (
+              <span className="text-gray-600 text-xs italic py-2">（空手）</span>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-wrap justify-center gap-1 px-2">
+            {cards.map((card) => (
+              <CardTile
+                key={card.id}
+                card={card}
+                levelRank={levelRank}
+                isRevealed={false}
+                size="sm"
+              />
+            ))}
+            {cards.length === 0 && (
+              <span className="text-gray-600 text-xs italic py-2">（空手）</span>
+            )}
+          </div>
+        )
       )}
     </div>
   );

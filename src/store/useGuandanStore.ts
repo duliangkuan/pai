@@ -3,6 +3,7 @@ import { immer } from 'zustand/middleware/immer';
 import {
   Card,
   GameSnapshot,
+  OrganizedGroup,
   Player,
   PlayerPosition,
   PlayTypeName,
@@ -113,6 +114,8 @@ export interface GuandanState {
   isSetupMode: boolean;
   /** 极速排牌矩阵剩余卡池；key="{Suit}-{Rank}"，value=剩余数量(0~2) */
   cardPool: Record<string, number>;
+  /** 各玩家的理牌分组 */
+  organizedGroups: Record<PlayerPosition, OrganizedGroup[]>;
   historyStack: GameSnapshot[];
   redoStack: GameSnapshot[];
 }
@@ -156,6 +159,12 @@ export interface GuandanActions {
   redo: () => void;
   /** 从云端快照完整覆盖当前状态 */
   loadSnapshot: (snapshot: GameSnapshot) => void;
+  /** 理牌：将选中的合法牌型加入理牌区（不重叠） */
+  organizeCards: (position: PlayerPosition, cardIds: string[], pattern: { type: PlayTypeName; primaryValue: number; length: number }) => void;
+  /** 恢复单个理牌组到非理牌区 */
+  restoreOrganizedGroup: (position: PlayerPosition, cardIds: string[]) => void;
+  /** 恢复该玩家全部理牌到非理牌区 */
+  restoreAllOrganized: (position: PlayerPosition) => void;
 }
 
 type GuandanStore = GuandanState & GuandanActions;
@@ -194,6 +203,12 @@ export const useGuandanStore = create<GuandanStore>()(
     table: deepClone(INITIAL_TABLE),
     isSetupMode: true,
     cardPool: buildInitialCardPool(),
+    organizedGroups: {
+      EAST: [],
+      SOUTH: [],
+      WEST: [],
+      NORTH: [],
+    },
     historyStack: [],
     redoStack: [],
 
@@ -297,19 +312,19 @@ export const useGuandanStore = create<GuandanStore>()(
           state.cardPool[key] = Math.min(2, current + 1); // 两副牌每种牌最多 2 张
         }
         state.players[position].handCards = [];
-        state.table.actionHistory = []; // 清空出牌记录
+        state.organizedGroups[position] = [];
+        state.table.actionHistory = [];
       });
     },
 
     clearAllHands: () => {
       set((state) => {
-        // 清空所有玩家手牌
         for (const pos of ALL_POSITIONS) {
           state.players[pos].handCards = [];
+          state.organizedGroups[pos] = [];
         }
-        // 重置卡池为初始状态（每种牌2张）
         state.cardPool = buildInitialCardPool();
-        state.table.actionHistory = []; // 清空出牌记录
+        state.table.actionHistory = [];
       });
     },
 
@@ -392,10 +407,13 @@ export const useGuandanStore = create<GuandanStore>()(
 
     playCards: (position, cards, playType, isRuleViolation) => {
       set((state) => {
-        // 从手牌移除
         const removedIds = new Set(cards.map((c) => c.id));
         state.players[position].handCards = state.players[position].handCards.filter(
           (c) => !removedIds.has(c.id)
+        );
+        // 移除包含已打出牌的理牌组
+        state.organizedGroups[position] = state.organizedGroups[position].filter(
+          (g) => !g.cardIds.some((id) => removedIds.has(id))
         );
         // 记录动作
         state.table.actionHistory.push({
@@ -439,6 +457,7 @@ export const useGuandanStore = create<GuandanStore>()(
         timestamp: Date.now(),
         playersState: deepClone(state.players),
         tableState: deepClone(state.table),
+        organizedGroupsState: deepClone(state.organizedGroups),
         remark,
       };
       set((s) => {
@@ -455,13 +474,14 @@ export const useGuandanStore = create<GuandanStore>()(
           timestamp: Date.now(),
           playersState: deepClone(state.players),
           tableState: deepClone(state.table),
+          organizedGroupsState: deepClone(state.organizedGroups),
         };
         state.redoStack.push(currentSnap);
         const prev = state.historyStack.pop();
         if (prev) {
           state.players = prev.playersState;
           state.table = prev.tableState;
-          // 恢复后重新排序（快照可能来自旧版本）
+          if (prev.organizedGroupsState) state.organizedGroups = prev.organizedGroupsState;
           sortAllHands(state.players, state.table.currentLevelRank);
         }
       });
@@ -475,12 +495,14 @@ export const useGuandanStore = create<GuandanStore>()(
           timestamp: Date.now(),
           playersState: deepClone(state.players),
           tableState: deepClone(state.table),
+          organizedGroupsState: deepClone(state.organizedGroups),
         };
         state.historyStack.push(currentSnap);
         const next = state.redoStack.pop();
         if (next) {
           state.players = next.playersState;
           state.table = next.tableState;
+          if (next.organizedGroupsState) state.organizedGroups = next.organizedGroupsState;
           sortAllHands(state.players, state.table.currentLevelRank);
         }
       });
@@ -490,9 +512,9 @@ export const useGuandanStore = create<GuandanStore>()(
       set((state) => {
         state.players = deepClone(snapshot.playersState);
         state.table = deepClone(snapshot.tableState);
+        if (snapshot.organizedGroupsState) state.organizedGroups = deepClone(snapshot.organizedGroupsState);
         state.historyStack = [];
         state.redoStack = [];
-        // 重建 cardPool：从快照手牌反推
         const pool = buildInitialCardPool();
         for (const pos of ALL_POSITIONS) {
           for (const card of snapshot.playersState[pos].handCards) {
@@ -501,8 +523,44 @@ export const useGuandanStore = create<GuandanStore>()(
           }
         }
         state.cardPool = pool;
-        // 加载后重新排序
         sortAllHands(state.players, state.table.currentLevelRank);
+      });
+    },
+
+    organizeCards: (position, cardIds, pattern) => {
+      set((state) => {
+        const groups = state.organizedGroups[position];
+        const selectedSet = new Set(cardIds);
+        for (const g of groups) {
+          for (const id of g.cardIds) {
+            if (selectedSet.has(id)) return; // 重叠，不执行
+          }
+        }
+        const isBomb = pattern.type === 'Bomb' || pattern.type === 'StraightFlush' || pattern.type === 'KingBomb';
+        groups.push({
+          cardIds: [...cardIds],
+          type: pattern.type,
+          primaryValue: pattern.primaryValue,
+          length: pattern.length,
+          isBomb,
+        });
+      });
+    },
+
+    restoreOrganizedGroup: (position, cardIds) => {
+      set((state) => {
+        const groups = state.organizedGroups[position];
+        const idSet = new Set(cardIds);
+        state.organizedGroups[position] = groups.filter((g) => {
+          if (g.cardIds.length !== idSet.size) return true;
+          return !g.cardIds.every((id) => idSet.has(id));
+        });
+      });
+    },
+
+    restoreAllOrganized: (position) => {
+      set((state) => {
+        state.organizedGroups[position] = [];
       });
     },
   }))
