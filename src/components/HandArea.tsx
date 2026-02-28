@@ -216,9 +216,9 @@ export default function HandArea({
       : unorgRows;
 
     return (
-      <div className="flex flex-col items-start gap-2 w-full">
+      <div className="flex flex-col items-start gap-2 w-fit min-w-full">
         {allRows.map((rowCards, i) => (
-          <div key={`row-${i}`} className="flex flex-row gap-2">
+          <div key={`row-${i}`} className="flex flex-row gap-2 shrink-0">
             {rowCards.map((card) => {
               const selected = isCurrent && selectedCardIds.has(card.id);
               const ruleViolation = violatingCardIds.has(card.id);
@@ -259,9 +259,9 @@ export default function HandArea({
       : unorgRows;
 
     return (
-      <div className="flex flex-col items-end gap-2 w-full">
+      <div className="flex flex-col items-end gap-2 w-fit min-w-full">
         {allRows.map((rowCards, i) => (
-          <div key={`row-${i}`} className="flex flex-row gap-2">
+          <div key={`row-${i}`} className="flex flex-row gap-2 shrink-0">
             {rowCards.map((card) => {
               const selected = isCurrent && selectedCardIds.has(card.id);
               const ruleViolation = violatingCardIds.has(card.id);

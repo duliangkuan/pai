@@ -196,6 +196,20 @@ function sortAllHands(
   }
 }
 
+/** 根据当前四家手牌重算 cardPool（用于 undo/redo 后同步牌堆） */
+function recalcCardPoolFromHands(
+  players: Record<PlayerPosition, Player>
+): Record<string, number> {
+  const full = buildInitialCardPool();
+  for (const pos of ALL_POSITIONS) {
+    for (const card of players[pos].handCards) {
+      const key = cardPoolKey(card.suit, card.rank);
+      if (full[key] !== undefined && full[key] > 0) full[key]--;
+    }
+  }
+  return full;
+}
+
 export const useGuandanStore = create<GuandanStore>()(
   immer((set, get) => ({
     // ── 初始 State ──────────────────────────────────────────
@@ -415,6 +429,12 @@ export const useGuandanStore = create<GuandanStore>()(
         state.organizedGroups[position] = state.organizedGroups[position].filter(
           (g) => !g.cardIds.some((id) => removedIds.has(id))
         );
+        // 教学牌桌：打出的牌自动归还排牌设置的牌堆，保证平衡
+        for (const card of cards) {
+          const key = cardPoolKey(card.suit, card.rank);
+          const current = state.cardPool[key] ?? 0;
+          state.cardPool[key] = Math.min(2, current + 1);
+        }
         // 记录动作
         state.table.actionHistory.push({
           actionId: `action-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -482,6 +502,7 @@ export const useGuandanStore = create<GuandanStore>()(
           state.players = prev.playersState;
           state.table = prev.tableState;
           if (prev.organizedGroupsState) state.organizedGroups = prev.organizedGroupsState;
+          state.cardPool = recalcCardPoolFromHands(state.players);
           sortAllHands(state.players, state.table.currentLevelRank);
         }
       });
@@ -503,6 +524,7 @@ export const useGuandanStore = create<GuandanStore>()(
           state.players = next.playersState;
           state.table = next.tableState;
           if (next.organizedGroupsState) state.organizedGroups = next.organizedGroupsState;
+          state.cardPool = recalcCardPoolFromHands(state.players);
           sortAllHands(state.players, state.table.currentLevelRank);
         }
       });

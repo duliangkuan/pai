@@ -258,8 +258,44 @@ export default function MainTable() {
         }}
       />
 
-      {/* ── 口字形布局：固定视口，南家手牌贴底，横向区域扩大 ───── */}
-      <div className="grid grid-cols-[minmax(70px,0.4fr)_minmax(0,1.2fr)_minmax(70px,0.4fr)] grid-rows-[auto_1fr_auto] gap-2 px-2 flex-1 min-h-0 z-10 w-full max-w-full">
+      {/* ── 中央出牌区：绝对定位脱离文档流，四家围成口字形 ───────────────────── */}
+      <div className="absolute inset-0 pointer-events-none z-20">
+        {/* 口字形中央区域：留出边距避免遮挡手牌和按钮 */}
+        <div className="absolute inset-[32%_32%_34%_32%] flex flex-col">
+          {/* 北家出牌：口字上边，向下靠拢 */}
+          <div className="flex flex-col items-center justify-end pt-2 pb-4 min-h-[60px] shrink-0">
+            <div className="pointer-events-auto">
+              <PlayedCardZone action={lastPlayByPlayer.NORTH} levelRank={levelRank} />
+            </div>
+          </div>
+          {/* 中间行：西家左 | 空白 | 东家右 */}
+          <div className="flex-1 min-h-0 flex flex-row items-center justify-between px-2">
+            {/* 西家出牌：口字左边，向右靠拢 */}
+            <div className="flex flex-row items-center justify-end min-w-[80px] shrink-0">
+              <div className="pointer-events-auto">
+                <PlayedCardZone action={lastPlayByPlayer.WEST} levelRank={levelRank} />
+              </div>
+            </div>
+            {/* 中央空白（需压制提示在下方主布局中） */}
+            <div className="flex-1 min-w-0" />
+            {/* 东家出牌：口字右边，向左靠拢 */}
+            <div className="flex flex-row items-center justify-start min-w-[80px] shrink-0">
+              <div className="pointer-events-auto">
+                <PlayedCardZone action={lastPlayByPlayer.EAST} levelRank={levelRank} />
+              </div>
+            </div>
+          </div>
+          {/* 南家出牌：口字下边，向上靠拢 */}
+          <div className="flex flex-col items-center justify-start pt-4 pb-2 min-h-[60px] shrink-0">
+            <div className="pointer-events-auto">
+              <PlayedCardZone action={lastPlayByPlayer.SOUTH} levelRank={levelRank} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 口字形布局：西/东列固定最小宽度，防止出牌后间隙收缩、牌被遮挡 ───── */}
+      <div className="grid grid-cols-[minmax(140px,0.4fr)_minmax(100px,1.2fr)_minmax(140px,0.4fr)] grid-rows-[auto_1fr_auto] gap-2 px-2 flex-1 min-h-0 z-10 w-full max-w-full">
         {/* 北家（顶部，手牌区域较短，仅占中间列宽度） */}
         <div className="col-start-1 col-span-3 row-start-1 flex flex-col items-center justify-center pt-3 pb-1 min-w-0 gap-1 w-full">
           <div className="w-fit min-w-0 max-w-[min(100%,calc(100%-140px))] mx-auto">
@@ -278,11 +314,11 @@ export default function MainTable() {
             organizedGroups={organizedGroups.NORTH}
           />
           </div>
-          <PlayedCardZone action={lastPlayByPlayer.NORTH} levelRank={levelRank} />
         </div>
 
-        {/* 西家（左侧中央，同数字一行，行从下到上从小到大，左侧留出绿色空白） */}
-        <div className="col-start-1 row-start-1 row-span-3 flex flex-row items-center justify-center min-w-0 overflow-visible gap-2 pl-5">
+        {/* 西家（左侧中央，同数字一行，行从下到上从小到大，可左右滑动查看全部牌） */}
+        <div className="relative col-start-1 row-start-1 row-span-3 flex flex-row items-center justify-start min-w-[140px] overflow-x-auto overflow-y-visible gap-2 pl-5 shrink-0 z-30">
+          <div className="shrink-0">
           <HandArea
             position="WEST"
             cards={players.WEST.handCards}
@@ -297,12 +333,12 @@ export default function MainTable() {
             layoutMode="we-row"
             organizedGroups={organizedGroups.WEST}
           />
-          <PlayedCardZone action={lastPlayByPlayer.WEST} levelRank={levelRank} />
+          </div>
         </div>
 
-        {/* 东家（右侧中央，同数字一行，行从下到上从小到大，右侧留出绿色空白） */}
-        <div className="col-start-3 row-start-1 row-span-3 flex flex-row items-center justify-center min-w-0 overflow-visible gap-2 pr-5">
-          <PlayedCardZone action={lastPlayByPlayer.EAST} levelRank={levelRank} />
+        {/* 东家（右侧中央，同数字一行，行从下到上从小到大，可左右滑动查看全部牌） */}
+        <div className="relative col-start-3 row-start-1 row-span-3 flex flex-row items-center justify-end min-w-[140px] overflow-x-auto overflow-y-visible gap-2 pr-5 shrink-0 z-30">
+          <div className="shrink-0">
           <HandArea
             position="EAST"
             cards={players.EAST.handCards}
@@ -317,6 +353,7 @@ export default function MainTable() {
             layoutMode="we-row"
             organizedGroups={organizedGroups.EAST}
           />
+          </div>
         </div>
 
         {/* 中央：需压制提示（出牌记录已移至弹窗） */}
@@ -331,7 +368,6 @@ export default function MainTable() {
 
         {/* 南家（贴底，手牌展示区下边界对齐屏幕底部，横向区域扩大） */}
         <div className="col-start-1 col-span-3 row-start-3 flex flex-col items-center gap-2 pt-4 pb-3 justify-end w-full min-w-0">
-          <PlayedCardZone action={lastPlayByPlayer.SOUTH} levelRank={levelRank} />
           {/* 操作台 */}
         <div className="relative flex items-center gap-2 shrink-0">
           {/* 错误气泡 */}
