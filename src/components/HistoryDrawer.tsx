@@ -28,7 +28,7 @@ const PLAY_TYPE_LABEL: Record<PlayTypeName, string> = {
 const POSITION_ZH = { SOUTH: '南家', NORTH: '北家', EAST: '东家', WEST: '西家' } as const;
 
 export default function HistoryDrawer() {
-  const { table, saveSnapshot, loadSnapshot } = useGuandanStore();
+  const { table, saveSnapshot, loadSnapshot, clearPlayHistory } = useGuandanStore();
 
   const [isOpen, setIsOpen] = useState(false);
   const [snapshots, setSnapshots] = useState<GameSnapshot[]>([]);
@@ -114,7 +114,17 @@ export default function HistoryDrawer() {
       )}
 
       {/* ── 悬浮按钮（Header 右侧） ─────────────────────────── */}
-      <div className="fixed top-3 right-4 z-50 flex items-center gap-2">
+      <div className="fixed top-3 right-4 z-[100] flex items-center gap-2 flex-shrink-0">
+        <button
+          onClick={() => {
+            clearPlayHistory();
+            setStatusMsg('✅ 出牌记录已清空');
+            setTimeout(() => setStatusMsg(null), 2000);
+          }}
+          className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-xl shadow-lg transition-colors"
+        >
+          🗑️ 清空记录
+        </button>
         <button
           onClick={() => setShowPlayRecordModal(true)}
           className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-xl shadow-lg transition-colors"
@@ -168,7 +178,7 @@ export default function HistoryDrawer() {
                   >
                     <span
                       className={[
-                        'text-xs px-2 py-0.5 rounded-full font-semibold',
+                        'text-base px-2.5 py-1 rounded-full font-semibold',
                         action.isRuleViolation ? 'bg-red-600 text-white' : 'bg-green-700/60 text-green-200',
                       ].join(' ')}
                     >
@@ -183,12 +193,13 @@ export default function HistoryDrawer() {
                             card={card}
                             levelRank={table.currentLevelRank}
                             size="sm"
+                            layoutMode="corner-only"
                             ruleViolation={action.isRuleViolation}
                           />
                         ))}
                       </div>
                     ) : (
-                      <span className="text-gray-400 text-xs italic">不出</span>
+                      <span className="text-gray-400 text-sm italic">不出</span>
                     )}
                   </div>
                 ))

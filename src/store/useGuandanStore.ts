@@ -149,6 +149,8 @@ export interface GuandanActions {
   ) => void;
   /** 不出（Pass）：记录 action、自动推进 currentPlayer */
   passAction: (position: PlayerPosition) => void;
+  /** 清空出牌记录与展示区（手牌、排牌设置、当前出牌方均不变） */
+  clearPlayHistory: () => void;
   /** 上帝之手：直接将任意玩家设为当前出牌方 */
   setCurrentPlayer: (position: PlayerPosition) => void;
   /** 保存快照到历史栈 */
@@ -461,6 +463,12 @@ export const useGuandanStore = create<GuandanStore>()(
         });
         // 不出也推进到下一家
         state.table.currentPlayer = nextPlayer(position);
+      });
+    },
+
+    clearPlayHistory: () => {
+      set((state) => {
+        state.table.actionHistory = [];
       });
     },
 

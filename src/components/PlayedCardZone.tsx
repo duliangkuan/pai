@@ -37,11 +37,11 @@ export default function PlayedCardZone({ action, levelRank }: PlayedCardZoneProp
       {action.playedCards.length > 0 ? (
         <div className="flex flex-row justify-center items-center origin-center">
           {action.playedCards.map((card, idx) => (
-            <div key={card.id} className={idx > 0 ? '-ml-6' : ''}>
+            <div key={card.id} className={`relative ${idx > 0 ? '-ml-8' : ''}`} style={{ zIndex: idx }}>
               <CardTile
                 card={card}
                 levelRank={levelRank}
-                size="md"
+                size="lg"
                 ruleViolation={action.isRuleViolation}
               />
             </div>
@@ -52,7 +52,7 @@ export default function PlayedCardZone({ action, levelRank }: PlayedCardZoneProp
       )}
       <span
         className={[
-          'text-[10px] font-semibold',
+          'text-base font-bold',
           action.isRuleViolation ? 'text-red-400' : 'text-green-300',
         ].join(' ')}
       >

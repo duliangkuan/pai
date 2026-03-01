@@ -152,7 +152,9 @@ export default function MainTable() {
         : c
     );
     const pattern = identifyPattern(finalCards, levelRank);
-    executePlay(finalCards, false, pattern.type);
+    // 逢人配指定后若仍为非法牌型，应与普通非法牌型一致：红框违规提示
+    const isViolation = !pattern.isValid || pattern.type === 'Invalid';
+    executePlay(finalCards, isViolation, pattern.type);
     setPendingCards([]);
   }
 
@@ -258,39 +260,23 @@ export default function MainTable() {
         }}
       />
 
-      {/* ── 中央出牌区：绝对定位脱离文档流，四家围成口字形 ───────────────────── */}
-      <div className="absolute inset-0 pointer-events-none z-20">
-        {/* 口字形中央区域：留出边距避免遮挡手牌和按钮，出牌向中间靠拢 */}
-        <div className="absolute inset-[36%_36%_38%_36%] flex flex-col">
-          {/* 北家出牌：口字上边，向下靠拢 */}
-          <div className="flex flex-col items-center justify-end pt-2 pb-4 min-h-[60px] shrink-0">
-            <div className="pointer-events-auto">
-              <PlayedCardZone action={lastPlayByPlayer.NORTH} levelRank={levelRank} />
-            </div>
-          </div>
-          {/* 中间行：西家左 | 空白 | 东家右 */}
-          <div className="flex-1 min-h-0 flex flex-row items-center justify-between px-2">
-            {/* 西家出牌：口字左边，向右靠拢 */}
-            <div className="flex flex-row items-center justify-end min-w-[80px] shrink-0">
-              <div className="pointer-events-auto">
-                <PlayedCardZone action={lastPlayByPlayer.WEST} levelRank={levelRank} />
-              </div>
-            </div>
-            {/* 中央空白（需压制提示在下方主布局中） */}
-            <div className="flex-1 min-w-0" />
-            {/* 东家出牌：口字右边，向左靠拢 */}
-            <div className="flex flex-row items-center justify-start min-w-[80px] shrink-0">
-              <div className="pointer-events-auto">
-                <PlayedCardZone action={lastPlayByPlayer.EAST} levelRank={levelRank} />
-              </div>
-            </div>
-          </div>
-          {/* 南家出牌：口字下边，向上靠拢 */}
-          <div className="flex flex-col items-center justify-start pt-4 pb-2 min-h-[60px] shrink-0">
-            <div className="pointer-events-auto">
-              <PlayedCardZone action={lastPlayByPlayer.SOUTH} levelRank={levelRank} />
-            </div>
-          </div>
+      {/* ── 四点锚定出牌区：全覆盖透明层，绝对定位脱离文档流 ───────────────────── */}
+      <div className="absolute inset-0 pointer-events-none z-40">
+        {/* 南家出牌区：在南家手牌和按钮正上方，绝不遮挡按钮 */}
+        <div className="absolute bottom-[38%] left-1/2 -translate-x-1/2 flex flex-row justify-center scale-90 origin-bottom">
+          <PlayedCardZone action={lastPlayByPlayer.SOUTH} levelRank={levelRank} />
+        </div>
+        {/* 北家出牌区：在北家手牌正下方 */}
+        <div className="absolute top-[28%] left-1/2 -translate-x-1/2 flex flex-row justify-center scale-90 origin-top">
+          <PlayedCardZone action={lastPlayByPlayer.NORTH} levelRank={levelRank} />
+        </div>
+        {/* 西家出牌区：在西家手牌右侧（东面） */}
+        <div className="absolute left-[22%] top-1/2 -translate-y-1/2 flex flex-row justify-start scale-90 origin-left">
+          <PlayedCardZone action={lastPlayByPlayer.WEST} levelRank={levelRank} />
+        </div>
+        {/* 东家出牌区：在东家手牌左侧（西面） */}
+        <div className="absolute right-[22%] top-1/2 -translate-y-1/2 flex flex-row justify-end scale-90 origin-right">
+          <PlayedCardZone action={lastPlayByPlayer.EAST} levelRank={levelRank} />
         </div>
       </div>
 
@@ -356,20 +342,13 @@ export default function MainTable() {
           </div>
         </div>
 
-        {/* 中央：需压制提示（出牌记录已移至弹窗） */}
-        <div className="col-start-2 row-start-2 flex flex-col items-center justify-center gap-2 min-h-[80px] py-2">
-          {lastPattern && lastPattern.type !== 'Pass' && (
-            <div className="text-green-300 text-xs bg-green-900/40 px-3 py-1 rounded-full">
-              需压制：{PLAY_TYPE_LABEL[lastPattern.type]}（{lastPattern.length}张，
-              主值 {lastPattern.primaryValue}）
-            </div>
-          )}
-        </div>
+        {/* 中央空白（需压制提示已隐藏） */}
+        <div className="col-start-2 row-start-2 flex flex-col items-center justify-center gap-2 min-h-[80px] py-2" />
 
         {/* 南家（贴底，手牌展示区下边界对齐屏幕底部，横向区域扩大） */}
         <div className="col-start-1 col-span-3 row-start-3 flex flex-col items-center gap-2 pt-4 pb-3 justify-end w-full min-w-0">
-          {/* 操作台 */}
-        <div className="relative flex items-center gap-2 shrink-0">
+          {/* 操作台：终极保护，永远浮在最表面，不可被遮挡 */}
+        <div className="relative z-[999] pointer-events-auto flex items-center gap-2 shrink-0">
           {/* 错误气泡 */}
           {errorMsg && (
             <div className="absolute -top-11 left-1/2 -translate-x-1/2 bg-red-600 text-white text-xs px-3 py-1.5 rounded-xl shadow-xl whitespace-nowrap animate-fade-in z-20">
@@ -459,13 +438,25 @@ export default function MainTable() {
           </button>
         </div>
 
-        {/* 已选牌预览气泡 */}
+        {/* 已选牌预览气泡：非法牌型时与出牌区违规提示样式一致（红框白字） */}
         {selectedIds.size > 0 && (
-          <div className="text-xs text-yellow-300 bg-gray-900/70 px-3 py-1 rounded-full shrink-0">
+          <div
+            className={[
+              'text-xs px-3 py-1.5 rounded-lg shrink-0 flex items-center gap-1',
+              previewPattern?.isValid
+                ? 'text-yellow-300 bg-gray-900/70'
+                : 'ring-2 ring-red-500 bg-red-900/30 text-red-100',
+            ].join(' ')}
+          >
             已选 {selectedIds.size} 张 ·{' '}
             {previewPattern?.isValid
               ? `${PLAY_TYPE_LABEL[previewPattern.type]}（主值 ${previewPattern.primaryValue}）`
-              : '非法牌型'}
+              : (
+                <>
+                  非法牌型
+                  <span className="text-amber-400">⚠️</span>
+                </>
+              )}
           </div>
         )}
 

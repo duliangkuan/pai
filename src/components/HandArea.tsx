@@ -145,7 +145,7 @@ export default function HandArea({
       : unorgCols;
 
     return (
-      <div className="flex flex-row items-end justify-center flex-wrap gap-1 w-fit max-w-full">
+      <div className="flex flex-row items-end justify-center flex-wrap gap-px w-fit max-w-full">
         {allColumns.map((col, i) =>
           renderColumn(col, `col-${i}`, SOUTH_SIZE, SOUTH_LAYOUT_MODE, SOUTH_COLUMN_OVERLAP)
         )}
@@ -155,7 +155,7 @@ export default function HandArea({
 
   // 北家：同数字为一列，仅展示左上角，方格排列不重叠，上边界为起跑线
   const renderNorthColumn = (columnCards: Card[], key: string) => (
-    <div key={key} className="flex flex-col items-center gap-2">
+    <div key={key} className="flex flex-col items-center gap-px">
       {columnCards.map((card) => {
         const selected = isCurrent && selectedCardIds.has(card.id);
         const ruleViolation = violatingCardIds.has(card.id);
@@ -192,7 +192,7 @@ export default function HandArea({
       : unorgCols;
 
     return (
-      <div className="flex flex-row items-start justify-center flex-wrap gap-2 w-fit max-w-full">
+      <div className="flex flex-row items-start justify-center flex-wrap gap-px w-fit max-w-full">
         {allColumns.map((col, i) =>
           renderNorthColumn(col, `col-${i}`)
         )}
@@ -216,9 +216,9 @@ export default function HandArea({
       : unorgRows;
 
     return (
-      <div className="flex flex-col items-start gap-2 w-fit min-w-full">
+      <div className="flex flex-col items-start gap-px w-fit min-w-full">
         {allRows.map((rowCards, i) => (
-          <div key={`row-${i}`} className="flex flex-row gap-2 shrink-0">
+          <div key={`row-${i}`} className="flex flex-row gap-px shrink-0">
             {rowCards.map((card) => {
               const selected = isCurrent && selectedCardIds.has(card.id);
               const ruleViolation = violatingCardIds.has(card.id);
@@ -259,9 +259,9 @@ export default function HandArea({
       : unorgRows;
 
     return (
-      <div className="flex flex-col items-end gap-2 w-fit min-w-full">
+      <div className="flex flex-col items-end gap-px w-fit min-w-full">
         {allRows.map((rowCards, i) => (
-          <div key={`row-${i}`} className="flex flex-row gap-2 shrink-0">
+          <div key={`row-${i}`} className="flex flex-row gap-px shrink-0">
             {rowCards.map((card) => {
               const selected = isCurrent && selectedCardIds.has(card.id);
               const ruleViolation = violatingCardIds.has(card.id);

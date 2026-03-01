@@ -100,21 +100,34 @@ const BASE_RANK_VALUE: Record<Rank, number> = {
 };
 
 /**
+ * 逢人配选定 actingAs 后，在规则层面完全当作该牌处理。
+ * 返回「用于规则计算的等效牌」：有 actingAs 则用其 suit/rank，否则原样。
+ */
+function resolveCardForRules(card: Card): Card {
+  if (card.actingAs) {
+    return { ...card, suit: card.actingAs.suit, rank: card.actingAs.rank, isWildcard: false };
+  }
+  return card;
+}
+
+/**
  * 计算一张牌在当前局面下的动态权重。
  *
  * 权重从小到大：
  *   普通牌 (2~A) < 非红桃级牌 (value=15) < 小王 (16) < 大王 (17)
  *   逢人配（红桃级牌）作百搭使用时权重由场景决定，此处返回 15。
+ *   逢人配已指定 actingAs 时，按 actingAs 的 rank 计算。
  */
 export function getCardValue(card: Card, currentLevelRank: Rank): number {
-  if (card.suit === 'Joker') {
-    return card.rank === 'Big' ? 17 : 16;
+  const rank = card.actingAs ? card.actingAs.rank : card.rank;
+  const suit = card.actingAs ? card.actingAs.suit : card.suit;
+  if (suit === 'Joker') {
+    return rank === 'Big' ? 17 : 16;
   }
-  if (card.rank === currentLevelRank) {
-    // 级牌（无论花色）权重均为 15
+  if (rank === currentLevelRank) {
     return 15;
   }
-  return BASE_RANK_VALUE[card.rank];
+  return BASE_RANK_VALUE[rank];
 }
 
 // ============================================================
@@ -131,13 +144,13 @@ function sortByValue(cards: Card[], levelRank: Rank): Card[] {
   return [...cards].sort((a, b) => getCardValue(a, levelRank) - getCardValue(b, levelRank));
 }
 
-/** 将牌组分为「逢人配」和「非逢人配」两组 */
+/** 将牌组分为「逢人配」和「非逢人配」两组。已指定 actingAs 的逢人配视为普通牌。 */
 function splitWildcards(cards: Card[]): { wilds: Card[]; nonWilds: Card[] } {
   const wilds: Card[] = [];
   const nonWilds: Card[] = [];
   for (const c of cards) {
-    if (c.isWildcard) wilds.push(c);
-    else nonWilds.push(c);
+    if (c.isWildcard && !c.actingAs) wilds.push(c);
+    else nonWilds.push(c.actingAs ? resolveCardForRules(c) : c);
   }
   return { wilds, nonWilds };
 }
@@ -303,12 +316,14 @@ const INVALID: PatternResult = {
 /**
  * 识别一组牌的牌型。
  * 支持：单张、对子、三同张、三带二、顺子、同花顺、三连对、钢板、炸弹、四大天王。
+ * 逢人配已指定 actingAs 时，在合法性校验中完全当作该牌处理。
  */
 export function identifyPattern(cards: Card[], currentLevelRank: Rank): PatternResult {
   const n = cards.length;
   if (n === 0) return INVALID;
 
-  const { wilds, nonWilds } = splitWildcards(cards);
+  const resolvedCards = cards.map(resolveCardForRules);
+  const { wilds, nonWilds } = splitWildcards(resolvedCards);
   const wc = wilds.length;
 
   // ── 四大天王：必须恰好 2 大王 + 2 小王 ───────────────────
@@ -391,19 +406,19 @@ export function identifyPattern(cards: Card[], currentLevelRank: Rank): PatternR
 
   // ── 三带二 (5张) ─────────────────────────────────────────
   if (n === 5) {
-    // 先尝试顺子
-    const { ok: straightOk, highValue: sHigh } = checkStraightLike(
-      nonWilds, wc, 5, currentLevelRank, false
-    );
-    if (straightOk) {
-      return { type: 'Straight', primaryValue: sHigh, length: 5, isValid: true };
-    }
-    // 同花顺
+    // 先尝试同花顺（同花顺也是顺子，必须先识别更具体的牌型，否则会误判为普通顺子进非炸弹区）
     const { ok: sfOk, highValue: sfHigh } = checkStraightLike(
       nonWilds, wc, 5, currentLevelRank, true
     );
     if (sfOk) {
       return { type: 'StraightFlush', primaryValue: sfHigh, length: 5, isValid: true };
+    }
+    // 再尝试普通顺子
+    const { ok: straightOk, highValue: sHigh } = checkStraightLike(
+      nonWilds, wc, 5, currentLevelRank, false
+    );
+    if (straightOk) {
+      return { type: 'Straight', primaryValue: sHigh, length: 5, isValid: true };
     }
     // 三带二：找到 3张同值 + 2张同值（可含百搭）
     if (!cards.some((c) => c.suit === 'Joker' && !c.isWildcard)) {
@@ -600,9 +615,13 @@ export interface WildcardSuggestion {
   displayLabel: string;
 }
 
+const SUIT_SYMBOL_WILD: Record<Suit, string> = {
+  Spades: '♠', Hearts: '♥', Clubs: '♣', Diamonds: '♦', Joker: '',
+};
+
 /**
- * 给定包含逢人配的已选牌组，枚举所有合法的「逢人配替代方案」。
- * 返回数组，每项是对应的替代花色+点数。
+ * 给定包含逢人配的已选牌组，枚举所有可选的「逢人配替代方案」。
+ * 不做合法性校验，直接返回除红桃级牌外的全部花色+点数组合。
  */
 export function enumerateWildcardOptions(
   cards: Card[],
@@ -617,46 +636,15 @@ export function enumerateWildcardOptions(
   if (wildcards.length === 0) return [];
 
   const suggestions: WildcardSuggestion[] = [];
-
-  // 对每张逢人配，枚举替代花色+点数（排除已存在的牌）
-  const nonWildValues = new Set(
-    cards
-      .filter((c) => !c.isWildcard)
-      .map((c) => `${c.suit}-${c.rank}`)
-  );
-
   for (const suit of SUITS_NORMAL) {
     for (const rank of RANKS_NORMAL) {
       if (rank === currentLevelRank && suit === 'Hearts') continue; // 不替代自身
-      const key = `${suit}-${rank}`;
-      if (nonWildValues.has(key)) continue;
-      // 构造替代后的牌组，验证是否为合法牌型
-      const testCards = cards.map((c) => {
-        if (c.isWildcard) {
-          return { ...c, actingAs: { suit, rank }, isWildcard: false };
-        }
-        return c;
+      suggestions.push({
+        suit,
+        rank,
+        displayLabel: `${SUIT_SYMBOL_WILD[suit]}${rank}`,
       });
-      const result = identifyPattern(testCards, currentLevelRank);
-      if (result.isValid && result.type !== 'Invalid') {
-        const suitSymbol: Record<Suit, string> = {
-          Spades: '♠', Hearts: '♥', Clubs: '♣', Diamonds: '♦', Joker: '',
-        };
-        suggestions.push({
-          suit,
-          rank,
-          displayLabel: `${suitSymbol[suit]}${rank}`,
-        });
-      }
     }
   }
-
-  // 去重（同一种替代只保留一条）
-  const seen = new Set<string>();
-  return suggestions.filter(({ suit, rank }) => {
-    const k = `${suit}-${rank}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+  return suggestions;
 }
