@@ -195,13 +195,11 @@ function checkStraightLike(
     if (suits.size > 1) return FAIL;
   }
 
-  // 过滤掉级牌（级牌不能作为顺子组成牌，除非作逢人配替代）
-  // 注意：nonWilds 里不含逢人配（红桃级牌），但可能含非红桃级牌
-  // 非红桃级牌 value=15，超出 A(14) 范围，不可入顺子
+  // 顺子按自然点数判断，级牌可入顺（与是否级牌无关）
+  // 仅排除大小王（自然值 16/17）
   const eligible = nonWilds.filter((c) => {
-    const v = getCardValue(c, levelRank);
-    // 只允许 A(14) 及以下的普通权重牌入顺
-    return v <= 14;
+    const naturalVal = rankToInt(c.rank);
+    return naturalVal >= 2 && naturalVal <= 14;
   });
 
   if (eligible.length + wildcardCount < requiredLen) return FAIL;
@@ -220,9 +218,11 @@ function checkStraightLike(
   // 尝试用当前非百搭牌集合和逢人配填出合法连续段
   // 枚举顺子最低点（允许 A=1 的特殊情况 A2345）
 
-  // 掼蛋允许顺子：A2345(A当1=1) ~ 10JQKA(10~14)
-  // 注意不允许跨越 A-2（即 JQKA2 等非法）
-  // A 既可当 1（只在最低顺 A2345），也可当 14（在 10JQKA）
+  // 掼蛋顺子规则：A 特殊，既可当主值 1 也可当主值 14
+  // - A2345：A 当 1，主值取 5
+  // - 10JQKA：A 当 14，主值取 14
+  // - 23456 等普通顺子：主值取最高牌
+  // 不允许跨越 A-2（JQKA2 等非法）
 
   // 构造候选连续区间 [lo, lo+n-1]
   // lo 范围：1 ~ (14-n+1)，其中 lo=1 代表 A2345

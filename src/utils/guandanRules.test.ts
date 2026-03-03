@@ -146,6 +146,65 @@ describe('identifyPattern', () => {
     expect(r.isValid).toBe(false);
     expect(r.type).toBe('Invalid');
   });
+
+  describe('顺子中 A 的双重取值（级牌可入顺）', () => {
+    const levelRank = '2'; // 打2：级牌 2 可入顺
+
+    it('A2345：A 当 1 使用，主值取 5', () => {
+      const c = [
+        card('1', 'Spades', 'A'),
+        card('2', 'Hearts', '2'),
+        card('3', 'Clubs', '3'),
+        card('4', 'Diamonds', '4'),
+        card('5', 'Spades', '5'),
+      ];
+      const r = identifyPattern(c, levelRank);
+      expect(r.isValid).toBe(true);
+      expect(r.type).toBe('Straight');
+      expect(r.primaryValue).toBe(5);
+    });
+
+    it('10JQKA：A 当 14 使用，主值取 14', () => {
+      const c = [
+        card('1', 'Spades', '10'),
+        card('2', 'Hearts', 'J'),
+        card('3', 'Clubs', 'Q'),
+        card('4', 'Diamonds', 'K'),
+        card('5', 'Spades', 'A'),
+      ];
+      const r = identifyPattern(c, levelRank);
+      expect(r.isValid).toBe(true);
+      expect(r.type).toBe('Straight');
+      expect(r.primaryValue).toBe(14);
+    });
+
+    it('23456：普通顺子，主值取 6', () => {
+      const c = [
+        card('1', 'Spades', '2'),
+        card('2', 'Hearts', '3'),
+        card('3', 'Clubs', '4'),
+        card('4', 'Diamonds', '5'),
+        card('5', 'Spades', '6'),
+      ];
+      const r = identifyPattern(c, levelRank);
+      expect(r.isValid).toBe(true);
+      expect(r.type).toBe('Straight');
+      expect(r.primaryValue).toBe(6);
+    });
+
+    it('JQKA2 非法（A 不能同时当 1 和 14）', () => {
+      const c = [
+        card('1', 'Spades', 'J'),
+        card('2', 'Hearts', 'Q'),
+        card('3', 'Clubs', 'K'),
+        card('4', 'Diamonds', 'A'),
+        card('5', 'Spades', '2'),
+      ];
+      const r = identifyPattern(c, levelRank);
+      expect(r.isValid).toBe(false);
+      expect(r.type).toBe('Invalid');
+    });
+  });
 });
 
 describe('canBeat', () => {
