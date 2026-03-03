@@ -117,7 +117,13 @@ export default function MainTable() {
     if (!pattern.isValid || pattern.type === 'Invalid') {
       isViolation = true;
       errorText = `非法牌型！${selected.length} 张牌无法组合`;
-    } else if (lastPattern && !canBeat(pattern, lastPattern)) {
+    } else if (
+      lastPattern &&
+      lastValidAction &&
+      lastValidAction.playerId !== currentPos &&
+      !canBeat(pattern, lastPattern)
+    ) {
+      // 三家都不出回到本家时，本家可出任意牌，不要求压制
       isViolation = true;
       errorText = `无法压制 ${PLAY_TYPE_LABEL[lastPattern.type]}，已标记违规`;
     }
