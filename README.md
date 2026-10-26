@@ -1,4 +1,30 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 掼蛋教学辅助演示工具
+
+正式网站：https://pai.dufengyun.xyz
+
+## 保存、备份与云端
+
+- 「保存牌局」先保存到当前浏览器 localStorage，无需数据库；刷新后在「历史记录」加载。
+- 本机存档按网站域名隔离，请固定使用正式网址。无痕模式、清除网站数据或更换浏览器不会保留本机存档。
+- 「导出备份」下载 JSON；在另一台设备或浏览器用「导入备份」恢复。导入会合并，保留已有较新的同编号牌局。
+- 「读取云端」按每批 50 条读取旧存档并缓存到本机；「同步此牌局到云端」手动备份单条存档。日常保存、打开历史记录均不唤醒数据库。
+- 云端 402 表示 Neon 账户/项目额度受限；失败会明确提示，且保留本机存档。数据库限制需在 Neon 控制台解除；删除存档不能恢复已耗尽的计算时长。
+- 不自动删除任何存档。删除云端存档失败时，界面不会假装删除成功。
+
+## 数据库初始化（只在新建数据库时执行一次）
+
+配置 `DATABASE_URL`（或 `POSTGRES_URL`），并由管理员执行：
+
+```sql
+CREATE TABLE IF NOT EXISTS guandan_snapshots (
+  snapshot_id VARCHAR(255) PRIMARY KEY,
+  timestamp BIGINT NOT NULL,
+  data JSONB NOT NULL,
+  remark VARCHAR(255)
+);
+```
+
+现有数据库无需迁移。每次保存/读取不再发送 CREATE TABLE。不要在数据库仍受限或未备份时盲目清理数据。
 
 ## Getting Started
 

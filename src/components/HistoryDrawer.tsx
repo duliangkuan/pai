@@ -9,6 +9,7 @@ import {
   saveGameSnapshotToKV,
 } from '@/actions/guandan-kv';
 import CardTile from './CardTile';
+import { cacheCloudGames, importSavedGames, readSavedGames, removeLocalGame, saveLocalGame, SNAPSHOT_STORAGE_KEY, type SavedGame } from '@/utils/snapshotStorage';
 
 const PLAY_TYPE_LABEL: Record<PlayTypeName, string> = {
   Single: '单张',
@@ -31,26 +32,56 @@ export default function HistoryDrawer() {
   const { table, saveSnapshot, loadSnapshot, clearPlayHistory } = useGuandanStore();
 
   const [isOpen, setIsOpen] = useState(false);
-  const [snapshots, setSnapshots] = useState<GameSnapshot[]>([]);
+  const [savedGames, setSavedGames] = useState<SavedGame[]>([]);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [cloudError, setCloudError] = useState<string | null>(null);
+  const [cloudOffset, setCloudOffset] = useState(0);
+  const [hasMoreCloud, setHasMoreCloud] = useState(false);
   const [remarkInput, setRemarkInput] = useState('');
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showPlayRecordModal, setShowPlayRecordModal] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // ── 拉取列表 ────────────────────────────────────────────────
-  const fetchList = useCallback(() => {
-    startTransition(async () => {
-      const list = await fetchGameSnapshotsFromKV();
-      setSnapshots(list);
-    });
+  const refreshLocal = useCallback(() => {
+    try {
+      setSavedGames(readSavedGames(window.localStorage));
+      setStorageError(null);
+    } catch {
+      setStorageError('无法读取本机存档。请先导出备份，并检查浏览器是否允许本地存储。');
+    }
   }, []);
 
   useEffect(() => {
-    if (isOpen) fetchList();
-  }, [isOpen, fetchList]);
+    refreshLocal();
+    function onStorage(event: StorageEvent) {
+      if (event.key === SNAPSHOT_STORAGE_KEY || event.key === null) refreshLocal();
+    }
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [refreshLocal]);
 
-  // ── 保存到云端 ──────────────────────────────────────────────
+  function fetchCloud(offset = 0) {
+    startTransition(async () => {
+      try {
+        const result = await fetchGameSnapshotsFromKV(offset);
+        if (!result.success) {
+          setCloudError(result.error || '读取云端失败，本机存档已保留。');
+          return;
+        }
+        setSavedGames(cacheCloudGames(window.localStorage, result.snapshots));
+        setCloudOffset(offset + result.snapshots.length);
+        setHasMoreCloud(result.hasMore);
+        setCloudError(null);
+        setStorageError(null);
+        setStatusMsg(`已读取 ${result.snapshots.length} 条云端牌局，并保存到本机。`);
+      } catch {
+        setCloudError('读取云端或写入本机失败。请检查网络和本机存储，已有存档不会被清空。');
+      }
+    });
+  }
+
+  // ── 本机优先保存；云端同步由用户手动触发 ─────────────────────
   function handleSaveClick() {
     setRemarkInput('');
     setShowSaveModal(true);
@@ -63,20 +94,69 @@ export default function HistoryDrawer() {
     const latest = state.historyStack[state.historyStack.length - 1];
     if (!latest) return;
 
-    setShowSaveModal(false);
+    try {
+      setSavedGames(saveLocalGame(window.localStorage, latest));
+      setStorageError(null);
+      setShowSaveModal(false);
+      setStatusMsg('✅ 牌局已保存到本机，刷新后仍可在历史记录中加载。');
+    } catch {
+      setStorageError('本机保存失败：存储空间不足、被禁用或存档异常。请先导出当前牌局。');
+    }
+  }
+
+  function syncGame(snap: GameSnapshot) {
     startTransition(async () => {
-      const result = await saveGameSnapshotToKV({
-        ...latest,
-        remark: remarkInput || undefined,
-      });
-      if (result.success) {
-        setStatusMsg('✅ 牌局已保存到云端');
-        fetchList();
-      } else {
-        setStatusMsg(`❌ 保存失败：${result.error}`);
+      try {
+        const result = await saveGameSnapshotToKV(snap);
+        if (!result.success) {
+          setCloudError(result.error || '同步失败，本机牌局已保留。');
+          return;
+        }
+        setSavedGames(saveLocalGame(window.localStorage, snap, true));
+        setCloudError(null);
+        setStatusMsg('✅ 此牌局已同步到云端。');
+      } catch {
+        setCloudError('同步未完成，请稍后重试。本机牌局已保留。');
       }
-      setTimeout(() => setStatusMsg(null), 3000);
     });
+  }
+
+  function downloadBackup(currentOnly = false) {
+    try {
+      const data = currentOnly ? {
+        version: 1,
+        snapshots: [{
+          snapshotId: `snap-${Date.now()}-export`, timestamp: Date.now(),
+          playersState: useGuandanStore.getState().players,
+          tableState: useGuandanStore.getState().table,
+          organizedGroupsState: useGuandanStore.getState().organizedGroups,
+          remark: remarkInput || undefined,
+        }],
+      } : { version: 1, snapshots: readSavedGames(window.localStorage).map(entry => entry.snapshot) };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `掼蛋牌局-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatusMsg('✅ 已导出牌局文件。');
+    } catch {
+      setStatusMsg('导出失败，请保留当前页面并检查浏览器存储设置。');
+    }
+  }
+
+  async function importBackup(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      if (file.size > 10_000_000) throw new Error('备份文件超过 10 MB，请拆分后导入。');
+      setSavedGames(importSavedGames(window.localStorage, JSON.parse(await file.text())));
+      setStorageError(null);
+      setStatusMsg('✅ 已导入本机存档，已有较新的牌局会保留。');
+    } catch {
+      setStatusMsg('导入失败：文件格式无效、超过 10 MB，或本机存储不可用。原有存档已保留。');
+    }
   }
 
   // ── 加载牌局 ────────────────────────────────────────────────
@@ -88,10 +168,22 @@ export default function HistoryDrawer() {
   }
 
   // ── 删除快照 ────────────────────────────────────────────────
-  function handleDeleteSnapshot(id: string) {
+  function handleDeleteSnapshot(entry: SavedGame) {
+    if (!window.confirm(entry.cloudSynced ? '确定删除此牌局的本机和云端存档？' : '确定删除此本机牌局？')) return;
     startTransition(async () => {
-      await deleteGameSnapshotFromKV(id);
-      setSnapshots((prev) => prev.filter((s) => s.snapshotId !== id));
+      try {
+        if (entry.cloudSynced) {
+          const result = await deleteGameSnapshotFromKV(entry.snapshot.snapshotId);
+          if (!result.success) {
+            setCloudError(result.error || '云端删除失败，牌局已保留。');
+            return;
+          }
+        }
+        setSavedGames(removeLocalGame(window.localStorage, entry.snapshot.snapshotId));
+        setStatusMsg('✅ 牌局已删除。');
+      } catch {
+        setStatusMsg('删除未完成，请刷新本机列表确认，或稍后重试。');
+      }
     });
   }
 
@@ -108,13 +200,13 @@ export default function HistoryDrawer() {
     <>
       {/* ── 状态提示 Toast ─────────────────────────────────── */}
       {statusMsg && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-gray-900 text-white text-sm px-4 py-2 rounded-xl shadow-2xl border border-gray-700 animate-fade-in">
+        <div role="status" className="fixed top-16 left-1/2 -translate-x-1/2 z-[100] w-[min(90vw,480px)] bg-gray-900 text-white text-sm px-4 py-2 rounded-xl shadow-2xl border border-gray-700 break-words" onClick={() => setStatusMsg(null)}>
           {statusMsg}
         </div>
       )}
 
       {/* ── 悬浮按钮（Header 右侧） ─────────────────────────── */}
-      <div className="fixed top-3 right-4 z-[100] flex items-center gap-2 flex-shrink-0">
+      <div className={`fixed top-3 right-4 z-[100] ${isOpen ? 'hidden' : 'flex'} items-center gap-2 flex-shrink-0`}>
         <button
           onClick={() => {
             clearPlayHistory();
@@ -138,7 +230,7 @@ export default function HistoryDrawer() {
           💾 保存牌局
         </button>
         <button
-          onClick={() => setIsOpen(true)}
+          onClick={() => { refreshLocal(); setIsOpen(true); }}
           className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-xl shadow-lg transition-colors"
         >
           📂 历史记录
@@ -213,10 +305,11 @@ export default function HistoryDrawer() {
       {showSaveModal && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-[min(92vw,400px)] shadow-2xl">
-            <h3 className="text-white font-bold text-base mb-3">保存牌局到云端</h3>
+            <h3 className="text-white font-bold text-base mb-3">保存牌局到本机</h3>
             <p className="text-gray-400 text-xs mb-3">
-              当前打：{table.currentLevelRank} 级
+              当前打：{table.currentLevelRank} 级。无需连接云端；可在历史记录中手动同步。
             </p>
+            {storageError && <p role="alert" className="text-amber-300 text-sm mb-3">{storageError}</p>}
             <input
               value={remarkInput}
               onChange={(e) => setRemarkInput(e.target.value)}
@@ -225,6 +318,7 @@ export default function HistoryDrawer() {
               className="w-full bg-gray-800 text-white text-sm rounded-lg px-3 py-2 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500 mb-4"
             />
             <div className="flex gap-2 justify-end">
+              <button onClick={() => downloadBackup(true)} className="text-blue-300 text-sm mr-auto">导出当前牌局</button>
               <button
                 onClick={() => setShowSaveModal(false)}
                 className="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded-lg"
@@ -269,18 +363,25 @@ export default function HistoryDrawer() {
           </button>
         </div>
 
+        <div className="px-4 py-3 text-xs text-gray-400 border-b border-gray-700 space-y-2">
+          <p>本机存档仅在当前浏览器可用，清除网站数据会丢失。建议定期导出备份。</p>
+          <p>云端受限时仍可保存、加载本机牌局。旧云端存档可点击下方「读取云端」获取。</p>
+          {storageError && <p role="alert" className="text-amber-300">{storageError}</p>}
+          {cloudError && <p role="alert" className="text-amber-300">{cloudError}</p>}
+        </div>
+
         {/* 列表 */}
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
           {isPending && (
             <div className="text-center text-gray-500 text-sm py-8">加载中…</div>
           )}
-          {!isPending && snapshots.length === 0 && (
+          {!isPending && !storageError && savedGames.length === 0 && (
             <div className="text-center text-gray-600 text-sm py-12">
-              暂无保存的牌局。<br />
+              本机暂无保存的牌局。<br />
               点击「保存牌局」按钮保存当前局面。
             </div>
           )}
-          {snapshots.map((snap) => (
+          {savedGames.map((entry) => { const snap = entry.snapshot; return (
             <div
               key={snap.snapshotId}
               className="bg-gray-800 border border-gray-700 rounded-xl p-3 flex flex-col gap-2"
@@ -293,9 +394,11 @@ export default function HistoryDrawer() {
                   <p className="text-gray-400 text-xs mt-0.5">
                     {formatTime(snap.timestamp)} · 打 {snap.tableState.currentLevelRank}
                   </p>
+                  <p className="text-xs text-green-300 mt-1">{entry.cloudSynced ? '本机已保存 · 已同步云端' : '本机已保存 · 未同步云端'}</p>
                 </div>
                 <button
-                  onClick={() => handleDeleteSnapshot(snap.snapshotId)}
+                  onClick={() => handleDeleteSnapshot(entry)}
+                  disabled={isPending}
                   className="text-gray-600 hover:text-red-400 text-xs transition-colors mt-0.5 shrink-0"
                   title="删除"
                 >
@@ -317,19 +420,24 @@ export default function HistoryDrawer() {
               >
                 加载此牌局 →
               </button>
+              {!entry.cloudSynced && <button onClick={() => syncGame(snap)} disabled={isPending} className="text-xs text-gray-300 disabled:opacity-50 py-1">同步此牌局到云端</button>}
             </div>
-          ))}
+          ); })}
+          {hasMoreCloud && <button onClick={() => fetchCloud(cloudOffset)} disabled={isPending} className="text-blue-300 text-sm disabled:opacity-50">读取更多云端牌局</button>}
         </div>
 
         {/* 刷新按钮 */}
-        <div className="p-3 border-t border-gray-700">
+        <div className="p-3 border-t border-gray-700 grid grid-cols-2 gap-2">
           <button
-            onClick={fetchList}
+            onClick={refreshLocal}
             disabled={isPending}
             className="w-full py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 text-sm rounded-lg transition-colors"
           >
-            🔄 刷新列表
+            刷新本机
           </button>
+          <button onClick={() => fetchCloud()} disabled={isPending} className="text-sm text-gray-300 bg-gray-700 rounded-lg disabled:opacity-50">读取云端</button>
+          <button onClick={() => downloadBackup()} className="text-sm text-blue-300 py-2">导出备份</button>
+          <label className="text-sm text-blue-300 py-2 text-center cursor-pointer">导入备份<input type="file" accept="application/json,.json" onChange={importBackup} className="hidden" /></label>
         </div>
       </div>
     </>

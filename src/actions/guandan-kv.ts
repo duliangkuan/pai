@@ -1,43 +1,24 @@
 'use server';
 
 import { neon } from '@neondatabase/serverless';
-import { GameSnapshot } from '@/types/guandan';
+import type { GameSnapshot } from '@/types/guandan';
+import { cloudErrorMessage, isGameSnapshot } from '@/utils/snapshotStorage';
 
-function getDbUrl(): string | null {
+function getSql() {
   const url = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
-  if (url && (url.startsWith('postgresql://') || url.startsWith('postgres://'))) {
-    return url;
-  }
-  return null;
+  if (!/^postgres(ql)?:\/\//.test(url)) throw new Error('Database unavailable');
+  return neon(url);
 }
 
-/** 确保 guandan_snapshots 表存在（首次使用时自动建表） */
-async function ensureTable(dbUrl: string) {
-  const sql = neon(dbUrl);
-  await sql`
-    CREATE TABLE IF NOT EXISTS guandan_snapshots (
-      snapshot_id VARCHAR(255) PRIMARY KEY,
-      timestamp BIGINT NOT NULL,
-      data JSONB NOT NULL,
-      remark VARCHAR(255)
-    )
-  `;
-}
-
-/** 将游戏快照存入 Neon PostgreSQL */
-export async function saveGameSnapshotToKV(
-  snapshot: GameSnapshot
-): Promise<{ success: boolean; error?: string }> {
-  const dbUrl = getDbUrl();
-  if (!dbUrl) {
-    return {
-      success: false,
-      error: '存储未配置：请设置 DATABASE_URL（Neon PostgreSQL）',
-    };
+// The existing table is initialized once, not on every request.
+export async function saveGameSnapshotToKV(snapshot: GameSnapshot): Promise<{ success: boolean; error?: string }> {
+  if (!isGameSnapshot(snapshot) || snapshot.snapshotId.length > 255 ||
+    (snapshot.remark !== undefined && (typeof snapshot.remark !== 'string' || snapshot.remark.length > 60)) ||
+    JSON.stringify(snapshot).length > 512_000) {
+    return { success: false, error: '牌局格式无效或过大，请先导出本机备份。' };
   }
   try {
-    const sql = neon(dbUrl);
-    await ensureTable(dbUrl);
+    const sql = getSql();
     await sql`
       INSERT INTO guandan_snapshots (snapshot_id, timestamp, data, remark)
       VALUES (${snapshot.snapshotId}, ${snapshot.timestamp}, ${JSON.stringify(snapshot)}::jsonb, ${snapshot.remark ?? null})
@@ -45,37 +26,36 @@ export async function saveGameSnapshotToKV(
     `;
     return { success: true };
   } catch (err) {
-    const message = err instanceof Error ? err.message : '未知错误';
-    return { success: false, error: message };
+    return { success: false, error: cloudErrorMessage(err) };
   }
 }
 
-/** 从 Neon 拉取牌局快照列表 */
-export async function fetchGameSnapshotsFromKV(): Promise<GameSnapshot[]> {
-  const dbUrl = getDbUrl();
-  if (!dbUrl) return [];
+export async function fetchGameSnapshotsFromKV(offset = 0): Promise<{
+  success: boolean; snapshots: GameSnapshot[]; hasMore: boolean; error?: string;
+}> {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000) {
+    return { success: false, snapshots: [], hasMore: false, error: '分页参数无效。' };
+  }
   try {
-    const sql = neon(dbUrl);
-    await ensureTable(dbUrl);
+    const sql = getSql();
     const rows = await sql`
-      SELECT data FROM guandan_snapshots ORDER BY timestamp DESC
+      SELECT data FROM guandan_snapshots ORDER BY timestamp DESC, snapshot_id DESC LIMIT 51 OFFSET ${offset}
     `;
-    return rows.map((r) => r.data as GameSnapshot);
-  } catch {
-    return [];
+    return { success: true, snapshots: rows.slice(0, 50).map(row => row.data as GameSnapshot), hasMore: rows.length > 50 };
+  } catch (err) {
+    return { success: false, snapshots: [], hasMore: false, error: cloudErrorMessage(err) };
   }
 }
 
-/** 从 Neon 删除指定牌局快照 */
-export async function deleteGameSnapshotFromKV(snapshotId: string): Promise<{ success: boolean }> {
-  const dbUrl = getDbUrl();
-  if (!dbUrl) return { success: false };
+export async function deleteGameSnapshotFromKV(snapshotId: string): Promise<{ success: boolean; error?: string }> {
+  if (typeof snapshotId !== 'string' || !snapshotId || snapshotId.length > 255) {
+    return { success: false, error: '牌局编号无效。' };
+  }
   try {
-    const sql = neon(dbUrl);
-    await ensureTable(dbUrl);
+    const sql = getSql();
     await sql`DELETE FROM guandan_snapshots WHERE snapshot_id = ${snapshotId}`;
     return { success: true };
-  } catch {
-    return { success: false };
+  } catch (err) {
+    return { success: false, error: cloudErrorMessage(err) };
   }
 }
